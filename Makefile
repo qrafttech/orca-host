@@ -21,7 +21,7 @@ build:              ## build the image for this machine's architecture, as orca-
 	docker build -t orca-host:dev .
 
 up: env             ## run the stack here, advertised on this laptop's tailnet IP
-	PAIRING_ADDRESS=$$(tailscale ip -4) docker compose -f compose.yaml -f compose.laptop.yaml --env-file env up -d
+	PAIRING_ADDRESS=$$(tailscale ip -4) ORCA_ENV_FILE=env docker compose -f compose.yaml -f compose.laptop.yaml --env-file env up -d
 
 down:
 	docker compose -f compose.yaml -f compose.laptop.yaml --env-file env down

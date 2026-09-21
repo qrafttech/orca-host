@@ -71,7 +71,7 @@ The VM is Flatcar Container Linux: immutable, Docker built in, nothing installed
 
 Network: own VPC, nothing reaches the VM from the internet. SSH answers on the tailnet address: `ssh core@<name>` (`make ssh`, `make logs`). The one firewall rule is the break-glass for when the stack is down: SSH from Google's IAP range only, `gcloud compute ssh <name> --tunnel-through-iap`, which needs an IAM identity of the project. The serial console shows the boot log, including the two units' output.
 
-What changes how: a new secret version or a new image under the same tag → `make restart`; a change to `ignition.yaml.tftpl` → a rebuild, Ignition runs at first boot only.
+What changes how: a new secret version, a new variable in it, or a new image under the same tag → `make restart`; a change to `compose.yaml` or `ignition.yaml.tftpl` → a rebuild, Ignition runs at first boot only.
 
 Rebuild the VM: `terraform -chdir=terraform apply -replace=google_compute_instance.vm`. The data disk keeps the checkouts, the Tailscale identity and the pairing; the client stays paired. The disk has `prevent_destroy`; the images on the boot disk are pulled again. A rebuilt VM has new SSH host keys; the `Makefile` skips the host-key check for the host, since the tailnet already authenticates the peer. For your own `ssh core@<name>`, the same in `~/.ssh/config`:
 

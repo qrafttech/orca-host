@@ -1,6 +1,8 @@
-# orca-host stack: Tailscale + Orca, both on the host's network. Everything personal comes from one env file:
-#   docker compose --env-file <file> up -d
-# The variables below are the whole contract of a host. `:?` = required, `:-` = default.
+# orca-host stack: Tailscale + Orca, both on the host's network. Everything personal comes from one env file,
+# read twice: by compose for the values below (`:?` = required, `:-` = default), and by the orca-host container
+# as a whole, so a new variable needs no change here.
+#   ORCA_ENV_FILE=<file> docker compose --env-file <file> up -d
+# The variables below are the contract of a host.
 #
 #   TS_AUTHKEY               Tailscale auth key, tagged, preauthorized, single-use. Only read on the first start;
 #                            the node identity then lives in <ORCA_DATA>/tailscale.
@@ -11,6 +13,7 @@
 #   CLAUDE_PERMISSION_MODE   optional: default | acceptEdits | auto | plan, the permission mode of Claude panes
 #   CLAUDE_SETTINGS_REPO     optional: <owner>/<repo> holding your Claude settings; CLAUDE_SETTINGS_FILE the path
 #                            of settings.json in it. `permissions`, a root CLAUDE.md and .claude/skills are taken.
+#   ORCA_ENV_FILE            the env file itself, for the orca-host container (set by the VM's unit)
 #   TS_HOSTNAME              the host's name on the tailnet (set by the VM's unit)
 #   ORCA_DATA                where state lives on the host: home/ and tailscale/ (set by the VM's unit)
 #   ORCA_IMAGE_TAG           which build of this image to run (set by the VM's unit)
@@ -39,6 +42,7 @@ services:
     network_mode: host
     init: true
     depends_on: [tailscale]
+    env_file: ${ORCA_ENV_FILE:-env}
     environment:
       CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:?}
       GH_TOKEN: ${GH_TOKEN:?}
@@ -47,9 +51,6 @@ services:
       GIT_COMMITTER_NAME: ${GIT_AUTHOR_NAME:?}
       GIT_COMMITTER_EMAIL: ${GIT_AUTHOR_EMAIL:?}
       ORCA_PAIRING: ${ORCA_PAIRING:-desktop}
-      CLAUDE_PERMISSION_MODE: ${CLAUDE_PERMISSION_MODE:-}
-      CLAUDE_SETTINGS_REPO: ${CLAUDE_SETTINGS_REPO:-}
-      CLAUDE_SETTINGS_FILE: ${CLAUDE_SETTINGS_FILE:-}
     volumes:
       # same path inside and outside: a project's compose file may bind-mount /home/orca/<project>/...
       - ${ORCA_DATA:-./data}/home:/home/orca

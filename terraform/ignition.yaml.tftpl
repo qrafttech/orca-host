@@ -65,7 +65,7 @@ storage:
             -v /var/run/docker.sock:/var/run/docker.sock \
             -v /opt/orca:/opt/orca:ro \
             -v /var/lib/orca:/var/lib/orca \
-            -e TS_HOSTNAME -e ORCA_DATA -e ORCA_IMAGE_TAG \
+            -e TS_HOSTNAME -e ORCA_DATA -e ORCA_IMAGE_TAG -e ORCA_ENV_FILE \
             -w /opt/orca docker:29.8.1-cli \
             docker compose --env-file /var/lib/orca/env up -d --pull always --remove-orphans
 
@@ -101,7 +101,7 @@ systemd:
         [Service]
         Type=oneshot
         RemainAfterExit=yes
-        Environment=TS_HOSTNAME=${name} ORCA_DATA=/var/lib/orca ORCA_IMAGE_TAG=${image_tag}
+        Environment=TS_HOSTNAME=${name} ORCA_DATA=/var/lib/orca ORCA_IMAGE_TAG=${image_tag} ORCA_ENV_FILE=/var/lib/orca/env
         ExecStart=/opt/orca/up
         StandardOutput=journal+console
         StandardError=journal+console
