@@ -67,7 +67,7 @@ storage:
             -v /var/lib/orca:/var/lib/orca \
             -e TS_HOSTNAME -e ORCA_DATA -e ORCA_IMAGE_TAG \
             -w /opt/orca docker:29.8.1-cli \
-            docker compose --env-file /var/lib/orca/env up -d --remove-orphans
+            docker compose --env-file /var/lib/orca/env up -d --pull always --remove-orphans
 
 systemd:
   units:

@@ -62,7 +62,7 @@ make secret      # the env file, from 1Password, into Secret Manager
 make pair        # pairing URL over the tailnet → `orca environment add`
 ```
 
-The VM is Flatcar Container Linux: immutable, Docker built in, nothing installed, updates itself. Ignition, rendered by Terraform from `terraform/ignition.yaml.tftpl`, is everything the VM is: the SSH key, the data-disk filesystem and mount, `/home/orca → /var/lib/orca/home`, `compose.yaml`, and two units: `orca-env.service` fetches the secret with the VM's own service account (retrying until a version exists), `orca.service` runs `docker compose up -d` from the `docker:cli` image. Rotate a secret: `make secret`, reboot.
+The VM is Flatcar Container Linux: immutable, Docker built in, nothing installed, updates itself. Ignition, rendered by Terraform from `terraform/ignition.yaml.tftpl`, is everything the VM is: the SSH key, the data-disk filesystem and mount, `/home/orca → /var/lib/orca/home`, `compose.yaml`, and two units: `orca-env.service` fetches the secret with the VM's own service account (retrying until a version exists), `orca.service` runs `docker compose up -d` from the `docker:cli` image. Rotate a secret, or pick up a new image under the same tag: `make secret`, `make restart`.
 
 Network: own VPC, nothing reaches the VM from the internet. SSH answers on the tailnet address: `ssh core@<name>` (`make ssh`, `make logs`). The one firewall rule is the break-glass for when the stack is down: SSH from Google's IAP range only, `gcloud compute ssh <name> --tunnel-through-iap`, which needs an IAM identity of the project. The serial console shows the boot log, including the two units' output.
 

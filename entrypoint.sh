@@ -20,8 +20,12 @@ fi
 
 export HOME=/home/orca
 cd "$HOME"
-# Orca launches `claude --dangerously-skip-permissions`; Claude asks to accept that once per machine.
-[ -f .claude.json ] || echo '{"bypassPermissionsModeAccepted":true}' > .claude.json
+# Claude Code's first-run questions (theme, login, bypass-permissions acceptance), answered up front. Merged at
+# every start: Claude rewrites this file and a fresh one loses the answers.
+[ -f .claude.json ] || echo '{}' > .claude.json
+jq --arg v "$(claude --version | cut -d' ' -f1)" \
+  '. + {hasCompletedOnboarding: true, lastOnboardingVersion: $v, theme: "dark", bypassPermissionsModeAccepted: true}' \
+  .claude.json > .claude.json.tmp && mv .claude.json.tmp .claude.json
 
 if [ -z "${PAIRING_ADDRESS:-}" ]; then
   echo "waiting for tailscale0"

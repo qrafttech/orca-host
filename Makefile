@@ -13,7 +13,7 @@ OP      := op://$(OP_VAULT)/orca-host/notesPlain
 TF      := terraform -chdir=terraform
 SSH     := ssh -o StrictHostKeyChecking=accept-new   # a new host is a new key, by construction
 
-.PHONY: build up down env secret bootstrap init plan apply pair logs shell ssh
+.PHONY: build up down env secret bootstrap init plan apply pair restart logs shell ssh
 
 ## image and stack, on this laptop
 build:              ## build the image for this machine's architecture, as orca-host:dev
@@ -53,6 +53,9 @@ pair:               ## read the pairing URL over the tailnet, pair the desktop c
 	test -s .pairing-url || { echo "no pairing URL yet: make logs"; rm -f .pairing-url; exit 1; }
 	orca environment add --name $(NAME) --pairing-code "$$(cat .pairing-url)"; rm -f .pairing-url
 	orca status --environment $(NAME)
+
+restart:            ## re-run the stack: new secret version, new image under the same tag. Ends live terminals.
+	ssh core@$(NAME) sudo systemctl restart orca-env orca
 
 logs:
 	ssh core@$(NAME) docker logs -f --tail 100 orca-host
