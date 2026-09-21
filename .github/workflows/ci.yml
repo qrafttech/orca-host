@@ -2,8 +2,7 @@
 # `main` and a multi-arch build. Pinning a host to a build = its sha tag in terraform.tfvars.
 name: ci
 on:
-  push:
-  pull_request:
+  push: # branches only: a PR from this repository is already covered by its branch's push
 
 env:
   IMAGE: ghcr.io/${{ github.repository }}
@@ -62,7 +61,6 @@ jobs:
           done
           docker logs smoke; exit 1
       - uses: docker/build-push-action@v6
-        if: github.event_name == 'push'
         with:
           context: .
           platforms: ${{ github.ref == 'refs/heads/main' && 'linux/amd64,linux/arm64' || 'linux/amd64' }}

@@ -51,7 +51,7 @@ On a Mac, `make up`: `compose.laptop.yaml` drops the Tailscale service (Docker D
 
 ## The host
 
-One person, one `terraform apply`, one state. `terraform.tfvars` (gitignored) holds the name, project, zone, size and your SSH public key; state goes to a bucket in your project.
+One person, one `terraform apply`, one state. `terraform.tfvars` (gitignored) holds the name, project, zone, size and your SSH public key; state goes to a bucket in your project. Terraform authenticates with Application Default Credentials, which are separate from `gcloud auth login`: `gcloud auth application-default login` once.
 
 ```bash
 cp terraform/terraform.tfvars.example terraform/terraform.tfvars   # fill in
