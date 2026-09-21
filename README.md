@@ -37,7 +37,7 @@ CI builds every push, runs the ready-contract smoke test, and pushes `ghcr.io/qr
 ```
 TS_AUTHKEY=tskey-auth-...          tagged tag:orca-host, preauthorized, single-use; read on the first start only
 CLAUDE_CODE_OAUTH_TOKEN=...        from `claude setup-token`
-GH_TOKEN=...                       fine-grained, Contents + Pull requests read/write
+GH_TOKEN=...                       classic, `repo` scope
 GIT_AUTHOR_NAME=...
 GIT_AUTHOR_EMAIL=...
 ORCA_PAIRING=desktop               or mobile
@@ -85,7 +85,7 @@ Per host, into the Secure Note:
 
 - **`TS_AUTHKEY`**: admin console → Settings → Keys → Generate auth key: reusable off, ephemeral off, tags on with `tag:orca-host`. Read once, at the first start; after that the identity is on the data disk.
 - **`CLAUDE_CODE_OAUTH_TOKEN`**: `claude setup-token` on the laptop.
-- **`GH_TOKEN`**: a fine-grained personal access token, resource owner the organisation, repositories you will work on, permissions Contents and Pull requests read/write. The organisation refuses classic tokens.
+- **`GH_TOKEN`**: a classic personal access token with the `repo` scope, nothing else: one token for every organisation you belong to. GHCR and multi-organisation access both rule out fine-grained tokens; the organisation must allow classic tokens (Settings → Personal access tokens).
 - **`GIT_AUTHOR_NAME`**, **`GIT_AUTHOR_EMAIL`**, **`ORCA_PAIRING`**.
 
 | Step | Today | Target |
