@@ -41,8 +41,12 @@ GH_TOKEN=...                       classic, `repo` scope
 GIT_AUTHOR_NAME=...
 GIT_AUTHOR_EMAIL=...
 ORCA_PAIRING=desktop               or mobile
-CLAUDE_PERMISSION_MODE=auto        optional: the permission mode of Claude panes, as in your own settings.json
+CLAUDE_PERMISSION_MODE=auto        optional: the permission mode of Claude panes
+CLAUDE_SETTINGS_REPO=me/claude     optional: your Claude settings, versioned; `permissions`, CLAUDE.md, skills are taken
+CLAUDE_SETTINGS_FILE=config/settings.json   where settings.json is in that repository
 ```
+
+Your Claude preferences, two ways: `CLAUDE_PERMISSION_MODE` alone sets the permission mode; `CLAUDE_SETTINGS_REPO` takes `permissions` from your own settings repository (only that: hooks and status lines point at laptop things), plus a `CLAUDE.md` and a `.claude/skills` at its root as the global ones. Neither set: Claude's defaults, it asks. Workspace trust stays a question, once per project, as on a laptop.
 
 The file is the body of a 1Password Secure Note named `orca-host`, in the vault `OP_VAULT` (`Private` by default; `export OP_VAULT="..."` or pass it to `make`). `make env` renders it to `./env` for a laptop; `make secret` sends it to the host's secret. 1Password is never on the host.
 

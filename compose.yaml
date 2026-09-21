@@ -8,7 +8,9 @@
 #   GH_TOKEN                 classic GitHub token, `repo` scope — the only GitHub credential on the host
 #   GIT_AUTHOR_NAME / GIT_AUTHOR_EMAIL   git identity, also used as committer
 #   ORCA_PAIRING             desktop | mobile — which pairing link `orca serve` prints (one at a time)
-#   CLAUDE_PERMISSION_MODE   optional: default | acceptEdits | auto | plan, for interactive Claude panes
+#   CLAUDE_PERMISSION_MODE   optional: default | acceptEdits | auto | plan, the permission mode of Claude panes
+#   CLAUDE_SETTINGS_REPO     optional: <owner>/<repo> holding your Claude settings; CLAUDE_SETTINGS_FILE the path
+#                            of settings.json in it. `permissions`, a root CLAUDE.md and .claude/skills are taken.
 #   TS_HOSTNAME              the host's name on the tailnet (set by the VM's unit)
 #   ORCA_DATA                where state lives on the host: home/ and tailscale/ (set by the VM's unit)
 #   ORCA_IMAGE_TAG           which build of this image to run (set by the VM's unit)
@@ -46,6 +48,8 @@ services:
       GIT_COMMITTER_EMAIL: ${GIT_AUTHOR_EMAIL:?}
       ORCA_PAIRING: ${ORCA_PAIRING:-desktop}
       CLAUDE_PERMISSION_MODE: ${CLAUDE_PERMISSION_MODE:-}
+      CLAUDE_SETTINGS_REPO: ${CLAUDE_SETTINGS_REPO:-}
+      CLAUDE_SETTINGS_FILE: ${CLAUDE_SETTINGS_FILE:-}
     volumes:
       # same path inside and outside: a project's compose file may bind-mount /home/orca/<project>/...
       - ${ORCA_DATA:-./data}/home:/home/orca
