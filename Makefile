@@ -1,5 +1,6 @@
 # orca-host, laptop side. Needs: docker, terraform, gcloud, op (1Password CLI), jq, ssh, the Orca desktop CLI.
-# Per-host values are read from terraform/terraform.tfvars; the env file comes from one 1Password field, OP.
+# Per-host values are read from terraform/terraform.tfvars; the env file is the body of a 1Password Secure Note
+# named orca-host, in the vault OP_VAULT (override: `make secret OP_VAULT="My Vault"`, or export it).
 TFVARS  := terraform/terraform.tfvars
 NAME    := $(shell sed -n 's/^name *= *"\(.*\)".*/\1/p' $(TFVARS))
 PROJECT := $(shell sed -n 's/^project *= *"\(.*\)".*/\1/p' $(TFVARS))
@@ -7,7 +8,8 @@ ZONE    := $(or $(shell sed -n 's/^zone *= *"\(.*\)".*/\1/p' $(TFVARS)),europe-w
 REGION  := $(shell echo $(ZONE) | sed 's/-[a-z]$$//')
 BUCKET  := $(PROJECT)-tfstate
 SECRET  := orca-host-$(NAME)-env
-OP      ?= op://Private/orca-host/env
+OP_VAULT ?= Private
+OP      := op://$(OP_VAULT)/orca-host/notesPlain
 TF      := terraform -chdir=terraform
 
 .PHONY: build up down env secret bootstrap init plan apply pair logs ssh

@@ -43,7 +43,7 @@ GIT_AUTHOR_EMAIL=...
 ORCA_PAIRING=desktop               or mobile
 ```
 
-The file lives in a 1Password item, in one field, `OP` in the `Makefile`. `make env` renders it to `./env` for a laptop; `make secret` sends it to the host's secret. 1Password is never on the host.
+The file is the body of a 1Password Secure Note named `orca-host`, in the vault `OP_VAULT` (`Private` by default; `export OP_VAULT="..."` or pass it to `make`). `make env` renders it to `./env` for a laptop; `make secret` sends it to the host's secret. 1Password is never on the host.
 
 Tailscale identity, Orca state and checkouts are under `ORCA_DATA` on the host (`/var/lib/orca` on the VM). Stopping the stack ends live terminals, as a service restart does.
 
@@ -76,11 +76,23 @@ Add a project from the laptop: `orca repo add --environment <name> --path /home/
 
 ## By hand, and to script
 
+Before the first host, once:
+
+- **Terraform's GCP login**: `gcloud auth application-default login`. Separate from `gcloud auth login`.
+- **The Tailscale tag**, once per tailnet: admin console → Access controls → Tags → Create tag: name `orca-host`, owner `autogroup:admin` (in the policy file: `"tagOwners": {"tag:orca-host": ["autogroup:admin"]}`). Tagged nodes never expire.
+
+Per host, into the Secure Note:
+
+- **`TS_AUTHKEY`**: admin console → Settings → Keys → Generate auth key: reusable off, ephemeral off, tags on with `tag:orca-host`. Read once, at the first start; after that the identity is on the data disk.
+- **`CLAUDE_CODE_OAUTH_TOKEN`**: `claude setup-token` on the laptop.
+- **`GH_TOKEN`**: a classic personal access token with `repo` and `read:packages`, nothing else. Fine-grained tokens cannot read packages.
+- **`GIT_AUTHOR_NAME`**, **`GIT_AUTHOR_EMAIL`**, **`ORCA_PAIRING`**.
+
 | Step | Today | Target |
 |---|---|---|
-| Tailscale ACL: `"tagOwners": {"tag:orca-host": ["autogroup:admin"]}` | admin console, once per tailnet | — |
-| Tailscale auth key, tagged, preauthorized, single-use | admin console, into the 1Password item | Tailscale API from `make secret` |
-| `claude setup-token`, GitHub token, git identity | laptop, into the 1Password item | — |
+| Tailscale tag | admin console, once per tailnet | — |
+| Tailscale auth key | admin console, into the Secure Note | Tailscale API from `make secret` |
+| Claude token, GitHub token, git identity | laptop, into the Secure Note | — |
 | state bucket | `make bootstrap` | — |
 | env file into Secret Manager | `make secret` | — |
 | pairing | `make pair` | from the Orca client |
