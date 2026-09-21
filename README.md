@@ -72,7 +72,7 @@ Rebuild the VM: `terraform -chdir=terraform apply -replace=google_compute_instan
 
 `make pair` reads the `orca_server_ready` line from the container's logs and hands `pairing.url` to `orca environment add`. Then in the app: Settings → Remote Orca Servers → Advanced → Active Server. For a phone: `ORCA_PAIRING=mobile` in the env file, `make secret`, restart the stack, and scan the QR of the URL (`qrencode -t ansiutf8 '<URL>'`). The URL is a credential; pairing survives restarts and rebuilds.
 
-Add a project from the laptop: `orca repo add --environment <name> --path /home/orca/<project>` after `gh repo clone <owner>/<project> /home/orca/<project>` in an Orca terminal. `git` authenticates through `gh` with `GH_TOKEN`: no login, no key. A worktree's setup hook runs `docker compose` on the VM's Docker; what it starts is reachable at `http://<tailnet IP>:<port>`.
+Add a project in the app: Set project location → Clone from URL, the https URL, destination `/home/orca` (the repository name is appended). `git` authenticates through `gh` with `GH_TOKEN`: no login, no key. `make shell` is a shell in the container as `orca`, the same paths an Orca terminal sees. A worktree's setup hook runs `docker compose` on the VM's Docker; what it starts is reachable at `http://<tailnet IP>:<port>`.
 
 ## By hand, and to script
 
@@ -97,4 +97,4 @@ Per host, into the Secure Note:
 | env file into Secret Manager | `make secret` | — |
 | pairing | `make pair` | from the Orca client |
 | mobile pairing | `ORCA_PAIRING=mobile`, `make secret`, restart, QR on the laptop | from the desktop client |
-| first clone of a project | Orca terminal, `gh repo clone` | `orca repo add` clones |
+| first clone of a project | the app, Clone from URL | — |

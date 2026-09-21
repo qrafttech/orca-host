@@ -11,8 +11,9 @@ SECRET  := orca-host-$(NAME)-env
 OP_VAULT ?= Private
 OP      := op://$(OP_VAULT)/orca-host/notesPlain
 TF      := terraform -chdir=terraform
+SSH     := ssh -o StrictHostKeyChecking=accept-new   # a new host is a new key, by construction
 
-.PHONY: build up down env secret bootstrap init plan apply pair logs ssh
+.PHONY: build up down env secret bootstrap init plan apply pair logs shell ssh
 
 ## image and stack, on this laptop
 build:              ## build the image for this machine's architecture, as orca-host:dev
@@ -47,7 +48,7 @@ apply:              ## bring the host up (or update it)
 	$(TF) apply
 
 pair:               ## read the pairing URL over the tailnet, pair the desktop client with it
-	ssh core@$(NAME) docker logs orca-host 2>/dev/null \
+	$(SSH) core@$(NAME) docker logs orca-host 2>/dev/null \
 	  | jq -Rr 'fromjson? | select(.type=="orca_server_ready") | .pairing.url' | tail -1 > .pairing-url
 	test -s .pairing-url || { echo "no pairing URL yet: make logs"; rm -f .pairing-url; exit 1; }
 	orca environment add --name $(NAME) --pairing-code "$$(cat .pairing-url)"; rm -f .pairing-url
@@ -56,5 +57,8 @@ pair:               ## read the pairing URL over the tailnet, pair the desktop c
 logs:
 	ssh core@$(NAME) docker logs -f --tail 100 orca-host
 
-ssh:
+shell:              ## a shell in the Orca container, as `orca`, the same paths an Orca terminal sees
+	ssh -t core@$(NAME) docker exec -it -u orca orca-host bash
+
+ssh:                ## a shell on the VM itself, as `core`
 	ssh core@$(NAME)
