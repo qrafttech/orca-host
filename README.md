@@ -112,3 +112,4 @@ Per host, into the Secure Note:
 | pairing | `make pair` | from the Orca client |
 | mobile pairing | `ORCA_PAIRING=mobile`, `make secret`, restart, QR on the laptop | from the desktop client |
 | first clone of a project | the app, Clone from URL | — |
+| Claude Code workspace trust | first Claude pane of a project, once, covers its worktrees — as on a laptop | — |

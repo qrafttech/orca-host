@@ -20,12 +20,12 @@ fi
 
 export HOME=/home/orca
 cd "$HOME"
-# Claude Code's first-run questions (theme, login, bypass-permissions acceptance) answered up front, and the home
-# trusted as a workspace, which covers every worktree under it. Merged at every start: Claude rewrites this file.
+# Claude Code's first-run questions (theme, login, bypass-permissions acceptance), answered up front. Merged at
+# every start: Claude rewrites this file. Workspace trust is per project and stays a question: it is keyed on the
+# checkout, covers its worktrees, and a checkout nested in a trusted folder is excluded by design.
 [ -f .claude.json ] || echo '{}' > .claude.json
-jq --arg v "$(claude --version | cut -d' ' -f1)" --arg home "$HOME" \
-  '. + {hasCompletedOnboarding: true, lastOnboardingVersion: $v, theme: "dark", bypassPermissionsModeAccepted: true}
-   | .projects[$home] += {hasTrustDialogAccepted: true}' \
+jq --arg v "$(claude --version | cut -d' ' -f1)" \
+  '. + {hasCompletedOnboarding: true, lastOnboardingVersion: $v, theme: "dark", bypassPermissionsModeAccepted: true}' \
   .claude.json > .claude.json.tmp && mv .claude.json.tmp .claude.json
 
 if [ -z "${PAIRING_ADDRESS:-}" ]; then
