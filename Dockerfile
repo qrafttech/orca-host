@@ -49,9 +49,11 @@ FROM debian:12-slim
 ARG CLAUDE_CODE_VERSION
 ENV DEBIAN_FRONTEND=noninteractive
 # Electron runtime libraries (Orca's headless-linux-server doc, Debian 12 names), Xvfb (Orca starts it itself),
-# and the tools a worktree setup hook may call.
+# the tools a worktree setup hook may call, and the interpreters a project's Claude Code hooks may need: hooks run
+# here, next to claude, not in the project's containers. The app's own runtime, at its own version, is in those.
 RUN apt-get update && apt-get install -y --no-install-recommends \
       bash ca-certificates curl git jq make lsof procps iproute2 util-linux xvfb xauth zlib1g \
+      ruby python3 nodejs \
       libgtk-3-0 libnss3 libatk1.0-0 libatk-bridge2.0-0 libgbm1 libasound2 \
       libxtst6 libcups2 libdrm2 libxkbcommon0 libpango-1.0-0 libcairo2 libatspi2.0-0 \
       libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libxrender1 libx11-xcb1 \
