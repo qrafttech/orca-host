@@ -4,9 +4,9 @@
 set -euo pipefail
 
 NAME="${NAME:-orca-host}"
-PROJECT="${PROJECT:?GCP project id (e.g. qraft-remote-agent-nrouanne)}"
+PROJECT="${PROJECT:?GCP project id}"
 ZONE="${ZONE:-europe-west9-b}"
-MACHINE_TYPE="${MACHINE_TYPE:-e2-standard-4}"   # ~3.9 GB RAM per episto stack: 4 vCPU / 16 GB = 3 stacks + Orca
+MACHINE_TYPE="${MACHINE_TYPE:-e2-standard-4}"   # ~4 GB RAM per Compose stack: 4 vCPU / 16 GB = 3 stacks + Orca
 DISK_SIZE="${DISK_SIZE:-100GB}"                 # ~12 GB per stack; disk binds before RAM
 
 gcloud compute instances create "$NAME" --project "$PROJECT" --zone "$ZONE" \
