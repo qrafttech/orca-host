@@ -1,0 +1,2 @@
+ignored:
+  - DL3008 # apt versions on Debian move under the pins; the image is rebuilt, not patched

@@ -1,93 +1,120 @@
 # orca-host
 
-A headless [Orca](https://github.com/stablyai/orca) server on a VM, driven from the desktop or mobile Orca client over the Qraft tailnet. One host per person, all of their projects on it. What belongs to a project (`orca.yaml`, worktree scripts, `.env` files, base images) lives in the project's repository, not here.
+A headless [Orca](https://github.com/stablyai/orca) server, driven from the desktop or mobile Orca client over the Qraft tailnet. One host per person, all of their projects on it. What belongs to a project (`orca.yaml`, worktree scripts, `.env` files, base images) lives in the project's repository, not here.
 
-| File | Runs on | Does |
+A host is an image, a compose stack and a Terraform module. Each layer works without the one above it.
+
+| Layer | Artifact | Runs on |
 |---|---|---|
-| `create-vm.sh` | laptop | creates the GCP VM |
-| `install.sh` | VM, root | system packages, Docker, `gh`, Tailscale, Orca, Claude Code, the `orca-serve` unit — idempotent |
+| Image | `Dockerfile` → `ghcr.io/qrafttech/orca-host` | any Docker host, amd64 and arm64 |
+| Stack | `compose.yaml` + one env file | any Linux Docker host with `/dev/net/tun` |
+| Host | `terraform/` | GCP; another provider is another module rendering the same Ignition config |
 
-## Layout
-
-- VM: Debian 12, e2-standard-4 (4 vCPU / 16 GB), 100 GB pd-balanced by default. A Docker Compose stack takes ~4 GB RAM and ~12 GB disk; disk binds before RAM.
-- Network: the VM is on the tailnet; `orca serve` advertises its tailnet IP and listens on `0.0.0.0:6768`. The GCP firewall is the only guard on the public IP: 22 only, by default. Clients pair over the tailnet, without a tunnel.
-- `/opt/orca/squashfs-root/AppRun`: the Orca AppImage, extracted (no FUSE on Debian cloud images), exposed as `/usr/local/bin/orca` with `LIBGL_ALWAYS_SOFTWARE=1`.
-- `orca`: the one system user, bash login, in the `docker` group. Owns the Claude login, the `gh` login, the git identity and every project checkout. Claude Code is in its `~/.local/bin`.
-- `/home/orca/<project>`: the project checkouts. `/home/orca/orca/workspaces/<project>/<branch>`: the worktrees Orca creates.
-- `orca-serve`: the systemd unit, `AppRun serve --port 6768 --pairing-address <tailnet IP>`, `Restart=on-failure`, enabled. No auto-update in serve mode. The environment of the unit is inherited by every Claude process Orca spawns.
-- Versions are pinned in `install.sh`: Orca to the desktop client's version (protocol compatibility), Claude Code to a release.
-
-## 1. Create the VM — laptop, `create-vm.sh`
-
-```bash
-PROJECT=<gcp project> ./create-vm.sh     # NAME, ZONE, MACHINE_TYPE, DISK_SIZE can be overridden
+```
+laptop / phone ──tailnet──▶ VM (Flatcar Container Linux, Ignition)
+                             ├─ data disk  /var/lib/orca — survives a VM rebuild, snapshotted daily
+                             │    home/       /home/orca: checkouts, ~/.claude, Orca state
+                             │    tailscale/  node identity: same tailnet IP after a rebuild
+                             │    env         the env file, fetched from Secret Manager at every boot
+                             └─ compose.yaml
+                                  ├─ tailscale   host network, /dev/net/tun
+                                  └─ orca-host   host network, `orca serve --pairing-address <tailnet IP>`
+                                       claude, gh, git, docker + compose in the image, under /usr/local and /opt
+                                       /var/run/docker.sock: project stacks are sibling containers on the VM's Docker
+                                       /home/orca is the same path inside and outside
 ```
 
-Rebuild from scratch: `gcloud compute instances delete <name> --project <project> --zone <zone>`, then the same command.
+## The image
 
-## 2. Install — VM, root, `install.sh`
+`orca serve` from the official AppImage, Claude Code, `gh`, `git`, the Docker CLI with compose, and `ruby`, `python3`, `node` for projects' Claude Code hooks, which run next to `claude`, not in the project's containers (the app's runtime, at its version, lives there). Runs as the unprivileged user `orca`; the entrypoint gives it the Docker socket's group, waits for `tailscale0` (or takes `PAIRING_ADDRESS`), seeds `~/.claude.json` with the bypass-permissions acceptance, and execs `orca serve --json`. Versions are build args at the top of the `Dockerfile`; a bump is a PR that says why.
 
-```bash
-gcloud compute scp install.sh <name>:~ --project <project> --zone <zone>
-gcloud compute ssh <name> --project <project> --zone <zone> -- sudo bash install.sh
+CI builds every push, runs the ready-contract smoke test, and pushes `ghcr.io/qrafttech/orca-host:<branch>` and `:sha-<sha>`; `main` also gets a multi-arch build. `make build` builds `orca-host:dev` for this machine.
+
+## The stack
+
+`compose.yaml` is the whole contract of a host: every personal value is a variable, listed at the top of the file. They come from one env file, one per host:
+
+```
+TS_AUTHKEY=tskey-auth-...          tagged tag:orca-host, preauthorized, single-use; read on the first start only
+CLAUDE_CODE_OAUTH_TOKEN=...        from `claude setup-token`
+GH_TOKEN=...                       classic, `repo` scope
+GIT_AUTHOR_NAME=...
+GIT_AUTHOR_EMAIL=...
+ORCA_PAIRING=desktop               or mobile
+CLAUDE_PERMISSION_MODE=auto        optional: the permission mode of Claude panes
+CLAUDE_SETTINGS_REPO=me/claude     optional: your Claude settings, versioned; `permissions`, CLAUDE.md, skills are taken
+CLAUDE_SETTINGS_FILE=config/settings.json   where settings.json is in that repository
 ```
 
-Idempotent. In order:
+Your Claude preferences, two ways: `CLAUDE_PERMISSION_MODE` alone sets the permission mode; `CLAUDE_SETTINGS_REPO` takes `permissions` from your own settings repository (only that: hooks and status lines point at laptop things), plus a `CLAUDE.md` and a `.claude/skills` at its root as the global ones. Neither set: Claude's defaults, it asks. Workspace trust stays a question, once per project, as on a laptop.
 
-1. apt: Electron/Xvfb runtime deps (Orca headless doc), `git jq curl lsof make file`
-2. Docker from `get.docker.com` (Debian's `docker.io` lacks Compose ≥ 2.24)
-3. `gh`
-4. Tailscale, `tailscale up --hostname <name>`. Without `TS_AUTHKEY`, the script prints the login URL and exits 2: approve the machine in the Tailscale admin, rerun. With `TS_AUTHKEY`, the join is non-interactive.
-5. Orca AppImage, extracted, wrapper
-6. user `orca`, Claude Code in its `~/.local/bin` (native installer, no Node)
-7. `orca-serve` unit
-8. a report, and the command that reads the pairing URL from the journal
+The file is the body of a 1Password Secure Note named `orca-host`, in the vault `OP_VAULT` (`Private` by default; `export OP_VAULT="..."` or pass it to `make`). `make env` renders it to `./env` for a laptop; `make secret` sends it to the host's secret. 1Password is never on the host.
 
-## 3. Pair — laptop, by hand
+Tailscale identity, Orca state and checkouts are under `ORCA_DATA` on the host (`/var/lib/orca` on the VM). Stopping the stack ends live terminals, as a service restart does.
 
-```bash
-# on the VM: the pairing URL
-sudo journalctl -u orca-serve -o cat | grep '^Pairing URL:' | tail -1
-# on the laptop (Orca desktop installed, laptop on the tailnet)
-orca environment add --name <name> --pairing-code '<URL>'
-orca status --environment <name>     # runtimeConnectionState: connected, graphState: ready
-```
+On a Mac, `make up`: `compose.laptop.yaml` drops the Tailscale service (Docker Desktop has no `/dev/net/tun` and no host network), publishes 6768 and advertises the laptop's own tailnet IP. Docker Desktop bind mounts refuse the unix sockets Orca needs, so the home is a named volume there.
 
-Then in the app: Settings → Remote Orca Servers → Advanced → **Active Server = <name>**. Pairing survives service restarts.
+## The host
 
-## 4. Add a project — VM, user `orca`, by hand
-
-In an Orca terminal, which runs on the VM:
+One person, one `terraform apply`, one state. `terraform.tfvars` (gitignored) holds the name, project, zone, size and your SSH public key; state goes to a bucket in your project. Terraform authenticates with Application Default Credentials, which are separate from `gcloud auth login`: `gcloud auth application-default login` once.
 
 ```bash
-gh auth login                        # GitHub, SSH, browser
-git config --global user.name  "<name>"
-git config --global user.email <email>
-git clone git@github.com:<owner>/<project>.git ~/<project>
-# then the project's gitignored files (.env …), from wherever they are kept; dev values only
+cp terraform/terraform.tfvars.example terraform/terraform.tfvars   # fill in
+make bootstrap   # once per project: the state bucket
+make init
+make apply       # VPC, service account, secret, data disk + daily snapshots, VM
+make secret      # the env file, from 1Password, into Secret Manager
+make pair        # pairing URL over the tailnet → `orca environment add`
 ```
 
-Then from the laptop: `orca repo add --environment <name> --path /home/orca/<project>`. The path must be a git repository, not an empty folder.
+The VM is Flatcar Container Linux: immutable, Docker built in, nothing installed, updates itself. Ignition, rendered by Terraform from `terraform/ignition.yaml.tftpl`, is everything the VM is: the SSH key, the data-disk filesystem and mount, `/home/orca → /var/lib/orca/home`, `compose.yaml`, and two units: `orca-env.service` fetches the secret with the VM's own service account (retrying until a version exists), `orca.service` runs `docker compose up -d` from the `docker:cli` image. Rotate a secret, or pick up a new image under the same tag: `make secret`, `make restart`.
 
-## 5. Claude login — VM, user `orca`, by hand
+Network: own VPC, nothing reaches the VM from the internet. SSH answers on the tailnet address: `ssh core@<name>` (`make ssh`, `make logs`). The one firewall rule is the break-glass for when the stack is down: SSH from Google's IAP range only, `gcloud compute ssh <name> --tunnel-through-iap`, which needs an IAM identity of the project. The serial console shows the boot log, including the two units' output.
 
-What works: open a Claude agent pane in the app, on a worktree of this host, pick `1. Claude account with subscription`, open the URL, paste the code. Writes `~/.claude/.credentials.json`; every later pane reuses it. There is no keyring on the VM: the credentials are in clear under `/home/orca`. Never copy that file.
+What changes how: a new secret version, a new variable in it, or a new image under the same tag → `make restart`; a change to `compose.yaml` or `ignition.yaml.tftpl` → a rebuild, Ignition runs at first boot only.
 
-What is not enough: `orca account add --agent claude`. It registers a "managed" account under `~/.config/orca/claude-accounts/<id>/`, but panes default to `selectionKey: host` (= the user's `~/.claude`) and ignore it. Only useful for several accounts on one host.
+Rebuild the VM: `terraform -chdir=terraform apply -replace=google_compute_instance.vm`. The data disk keeps the checkouts, the Tailscale identity and the pairing; the client stays paired. The disk has `prevent_destroy`; the images on the boot disk are pulled again. A rebuilt VM has new SSH host keys; the `Makefile` skips the host-key check for the host, since the tailnet already authenticates the peer. For your own `ssh core@<name>`, the same in `~/.ssh/config`:
 
-First launch by Orca (`claude --dangerously-skip-permissions`): Claude asks to accept bypass mode, once per machine → `bypassPermissionsModeAccepted: true` in `~/.claude.json`.
+```
+Host <name>
+  StrictHostKeyChecking no
+  UserKnownHostsFile /dev/null
+```
 
-## 6. Worktrees — app
+## Pairing and projects
 
-A worktree is created in the app: project, branch name, base branch, setup **Run**. The project's `orca.yaml` `setup` hook runs on the VM, against `orca serve`, without a renderer. Whatever the hook starts is reachable from the laptop at `http://<tailnet IP>:<port>`.
+`make pair` reads the `orca_server_ready` line from the container's logs and hands `pairing.url` to `orca environment add`. Then in the app: Settings → Remote Orca Servers → Advanced → Active Server. For a phone: `ORCA_PAIRING=mobile` in the env file, `make secret`, restart the stack, and scan the QR of the URL (`qrencode -t ansiutf8 '<URL>'`). The URL is a credential; pairing survives restarts and rebuilds.
 
-## By hand today, to script
+Add a project in the app: Set project location → Clone from URL, the https URL, destination `/home/orca` (the repository name is appended). `git` authenticates through `gh` with `GH_TOKEN`: no login, no key. `make shell` is a shell in the container as `orca`, the same paths an Orca terminal sees. A worktree's setup hook runs `docker compose` on the VM's Docker; what it starts is reachable at `http://<tailnet IP>:<port>`.
+
+## By hand, and to script
+
+Before the first host, once:
+
+- **Terraform's GCP login**: `gcloud auth application-default login`. Separate from `gcloud auth login`.
+- **The Tailscale tag**, once per tailnet: admin console → Access controls → Tags → Create tag: name `orca-host`, owner `autogroup:admin` (in the policy file: `"tagOwners": {"tag:orca-host": ["autogroup:admin"]}`). Tagged nodes never expire.
+
+  ![Create tag](docs/tailscale-tag.png)
+
+Per host, into the Secure Note:
+
+- **`TS_AUTHKEY`**: admin console → Settings → Keys → Generate auth key: reusable off, ephemeral off, tags on with `tag:orca-host`. Read once, at the first start; after that the identity is on the data disk.
+
+  ![Generate auth key](docs/tailscale-auth-key.png)
+- **`CLAUDE_CODE_OAUTH_TOKEN`**: `claude setup-token` on the laptop.
+- **`GH_TOKEN`**: a classic personal access token with the `repo` scope, nothing else: one token for every organisation you belong to. GHCR and multi-organisation access both rule out fine-grained tokens; the organisation must allow classic tokens (Settings → Personal access tokens).
+
+  ![Token scopes](docs/github-token.png)
+- **`GIT_AUTHOR_NAME`**, **`GIT_AUTHOR_EMAIL`**, **`ORCA_PAIRING`**.
 
 | Step | Today | Target |
 |---|---|---|
-| 1 VM creation | `create-vm.sh` | an explicit firewall rule (6768 closed, 22 from the tailnet only) instead of the defaults |
-| 2.4 Tailscale join | browser approval | `TS_AUTHKEY` |
-| 3 pairing | laptop, `orca environment add` | from the Orca client, desktop or mobile |
-| 4 gh, git identity, clone, gitignored files | Orca terminal | `bootstrap.sh` as user `orca`, with `GH_TOKEN`, identity and files provided |
-| 5 Claude login | Orca pane | `claude setup-token` → `CLAUDE_CODE_OAUTH_TOKEN` in an `EnvironmentFile` of the unit |
-| 5 bypass permissions acceptance | Orca pane, first time | `bypassPermissionsModeAccepted` in `~/.claude.json`, set by `bootstrap.sh` |
+| Tailscale tag | admin console, once per tailnet | — |
+| Tailscale auth key | admin console, into the Secure Note | Tailscale API from `make secret` |
+| Claude token, GitHub token, git identity | laptop, into the Secure Note | — |
+| state bucket | `make bootstrap` | — |
+| env file into Secret Manager | `make secret` | — |
+| pairing | `make pair` | from the Orca client |
+| mobile pairing | `ORCA_PAIRING=mobile`, `make secret`, restart, QR on the laptop | from the desktop client |
+| first clone of a project | the app, Clone from URL | — |
+| Claude Code workspace trust | first Claude pane of a project, once, covers its worktrees — as on a laptop | — |

@@ -1,0 +1,110 @@
+# Butane config for Flatcar, rendered by Terraform, applied by Ignition on the VM's first boot.
+# Everything the host is: an SSH key, the data disk, three files under /opt/orca (/etc is noexec on Flatcar),
+# two units. Nothing else is ever written to it.
+variant: flatcar
+version: 1.0.0
+
+passwd:
+  users:
+    - name: core
+      ssh_authorized_keys:
+        - ${ssh_key}
+
+storage:
+  filesystems:
+    # The data disk. Created blank the first time, reused as is after that (wipe_filesystem: false).
+    - device: ${data_device}
+      format: ext4
+      label: orca
+      wipe_filesystem: false
+      path: /var/lib/orca
+      with_mount_unit: true
+  links:
+    # /home/orca on the host is the same path as in the container, so a project's bind mounts line up.
+    - path: /home/orca
+      target: /var/lib/orca/home
+      hard: false
+  files:
+    - path: /opt/orca/compose.yaml
+      mode: 0644
+      contents:
+        inline: |
+          ${indent(10, compose)}
+    - path: /opt/orca/fetch-env
+      mode: 0755
+      contents:
+        inline: |
+          #!/bin/sh
+          # Fetches this host's env file from Secret Manager into /var/lib/orca/env, with the VM's own identity.
+          # Retries until the secret has a version: `make secret` may come after `make apply`.
+          set -eu
+          secret="projects/${project}/secrets/orca-host-${name}-env/versions/latest"
+          # a pipeline's status is jq's, which is happy with an empty curl: test the values, not the commands
+          while :; do
+            token=$(curl -sf -H 'Metadata-Flavor: Google' \
+              'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' \
+              | jq -r '.access_token // empty')
+            data=$(curl -sf -H "Authorization: Bearer $token" \
+              "https://secretmanager.googleapis.com/v1/$secret:access" | jq -r '.payload.data // empty')
+            [ -n "$data" ] && break
+            echo "no version of $secret yet, retrying in 15s"
+            sleep 15
+          done
+          umask 077
+          echo "$data" | base64 -d > /var/lib/orca/env.tmp
+          mv /var/lib/orca/env.tmp /var/lib/orca/env
+    - path: /opt/orca/up
+      mode: 0755
+      contents:
+        inline: |
+          #!/bin/sh
+          # Starts, or updates, the stack. Compose runs from the docker:cli image: Flatcar ships none.
+          # The image is public: no registry login.
+          set -eu
+          exec docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v /opt/orca:/opt/orca:ro \
+            -v /var/lib/orca:/var/lib/orca \
+            -e TS_HOSTNAME -e ORCA_DATA -e ORCA_IMAGE_TAG -e ORCA_ENV_FILE \
+            -w /opt/orca docker:29.8.1-cli \
+            docker compose --env-file /var/lib/orca/env up -d --pull always --remove-orphans
+
+systemd:
+  units:
+    - name: orca-env.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=orca-host: fetch the env file from Secret Manager
+        After=network-online.target
+        Wants=network-online.target
+        RequiresMountsFor=/var/lib/orca
+
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+        ExecStart=/opt/orca/fetch-env
+        StandardOutput=journal+console
+        StandardError=journal+console
+
+        [Install]
+        WantedBy=multi-user.target
+    - name: orca.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=orca-host: the compose stack
+        After=docker.service orca-env.service
+        Requires=docker.service orca-env.service
+        RequiresMountsFor=/var/lib/orca
+
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+        Environment=TS_HOSTNAME=${name} ORCA_DATA=/var/lib/orca ORCA_IMAGE_TAG=${image_tag} ORCA_ENV_FILE=/var/lib/orca/env
+        ExecStart=/opt/orca/up
+        StandardOutput=journal+console
+        StandardError=journal+console
+
+        [Install]
+        WantedBy=multi-user.target

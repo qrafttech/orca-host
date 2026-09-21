@@ -1,0 +1,8 @@
+# Copy to terraform.tfvars (gitignored) and fill in.
+name           = "orca-host"
+project        = "my-gcp-project"
+zone           = "europe-west9-b"
+ssh_public_key = "ssh-ed25519 AAAA... me@laptop"
+# machine_type = "e2-standard-4"
+# data_disk_gb = 50
+# image_tag    = "main"
