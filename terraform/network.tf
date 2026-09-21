@@ -13,3 +13,16 @@ resource "google_compute_subnetwork" "subnet" {
   region        = local.region
   ip_cidr_range = "10.0.0.0/24"
 }
+
+# Break-glass when Tailscale is down: SSH from Google's IAP range only, i.e. `gcloud compute ssh --tunnel-through-iap`,
+# which needs an IAM identity of the project and OS Login (enabled by Flatcar's GCE image). Not reachable from
+# the internet: the IAP range is Google's.
+resource "google_compute_firewall" "iap_ssh" {
+  name          = "${var.name}-iap-ssh"
+  network       = google_compute_network.vpc.id
+  source_ranges = ["35.235.240.0/20"]
+  allow {
+    protocol = "tcp"
+    ports    = ["22"]
+  }
+}

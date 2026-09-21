@@ -1,5 +1,6 @@
 # Butane config for Flatcar, rendered by Terraform, applied by Ignition on the VM's first boot.
-# Everything the host is: an SSH key, the data disk, three files, two units. Nothing else is ever written to it.
+# Everything the host is: an SSH key, the data disk, three files under /opt/orca (/etc is noexec on Flatcar),
+# two units. Nothing else is ever written to it.
 variant: flatcar
 version: 1.0.0
 
@@ -24,12 +25,12 @@ storage:
       target: /var/lib/orca/home
       hard: false
   files:
-    - path: /etc/orca/compose.yaml
+    - path: /opt/orca/compose.yaml
       mode: 0644
       contents:
         inline: |
           ${indent(10, compose)}
-    - path: /etc/orca/fetch-env
+    - path: /opt/orca/fetch-env
       mode: 0755
       contents:
         inline: |
@@ -38,34 +39,35 @@ storage:
           # Retries until the secret has a version: `make secret` may come after `make apply`.
           set -eu
           secret="projects/${project}/secrets/orca-host-${name}-env/versions/latest"
-          until token=$(curl -sf -H 'Metadata-Flavor: Google' \
-                  'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' \
-                  | jq -r .access_token) \
-             && data=$(curl -sf -H "Authorization: Bearer $token" \
-                  "https://secretmanager.googleapis.com/v1/$secret:access" | jq -r .payload.data); do
+          # a pipeline's status is jq's, which is happy with an empty curl: test the values, not the commands
+          while :; do
+            token=$(curl -sf -H 'Metadata-Flavor: Google' \
+              'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' \
+              | jq -r '.access_token // empty')
+            data=$(curl -sf -H "Authorization: Bearer $token" \
+              "https://secretmanager.googleapis.com/v1/$secret:access" | jq -r '.payload.data // empty')
+            [ -n "$data" ] && break
             echo "no version of $secret yet, retrying in 15s"
             sleep 15
           done
           umask 077
           echo "$data" | base64 -d > /var/lib/orca/env.tmp
           mv /var/lib/orca/env.tmp /var/lib/orca/env
-    - path: /etc/orca/up
+    - path: /opt/orca/up
       mode: 0755
       contents:
         inline: |
           #!/bin/sh
           # Starts, or updates, the stack. Compose runs from the docker:cli image: Flatcar ships none.
-          # GH_TOKEN from the env file logs into ghcr.io, needed only while the image is private.
+          # The image is public: no registry login.
           set -eu
-          GH_TOKEN=$(sed -n 's/^GH_TOKEN=//p' /var/lib/orca/env)
           exec docker run --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
-            -v /etc/orca:/etc/orca:ro \
+            -v /opt/orca:/opt/orca:ro \
             -v /var/lib/orca:/var/lib/orca \
-            -e TS_HOSTNAME -e ORCA_DATA -e ORCA_IMAGE_TAG -e GH_TOKEN="$GH_TOKEN" \
-            -w /etc/orca docker:29.8.1-cli sh -c '
-              echo "$GH_TOKEN" | docker login ghcr.io -u token --password-stdin >/dev/null
-              docker compose --env-file /var/lib/orca/env up -d --remove-orphans'
+            -e TS_HOSTNAME -e ORCA_DATA -e ORCA_IMAGE_TAG \
+            -w /opt/orca docker:29.8.1-cli \
+            docker compose --env-file /var/lib/orca/env up -d --remove-orphans
 
 systemd:
   units:
@@ -81,7 +83,9 @@ systemd:
         [Service]
         Type=oneshot
         RemainAfterExit=yes
-        ExecStart=/etc/orca/fetch-env
+        ExecStart=/opt/orca/fetch-env
+        StandardOutput=journal+console
+        StandardError=journal+console
 
         [Install]
         WantedBy=multi-user.target
@@ -98,7 +102,9 @@ systemd:
         Type=oneshot
         RemainAfterExit=yes
         Environment=TS_HOSTNAME=${name} ORCA_DATA=/var/lib/orca ORCA_IMAGE_TAG=${image_tag}
-        ExecStart=/etc/orca/up
+        ExecStart=/opt/orca/up
+        StandardOutput=journal+console
+        StandardError=journal+console
 
         [Install]
         WantedBy=multi-user.target

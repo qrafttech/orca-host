@@ -37,7 +37,7 @@ CI builds every push, runs the ready-contract smoke test, and pushes `ghcr.io/qr
 ```
 TS_AUTHKEY=tskey-auth-...          tagged tag:orca-host, preauthorized, single-use; read on the first start only
 CLAUDE_CODE_OAUTH_TOKEN=...        from `claude setup-token`
-GH_TOKEN=...                       repo, read:packages
+GH_TOKEN=...                       fine-grained, Contents + Pull requests read/write
 GIT_AUTHOR_NAME=...
 GIT_AUTHOR_EMAIL=...
 ORCA_PAIRING=desktop               or mobile
@@ -64,7 +64,7 @@ make pair        # pairing URL over the tailnet → `orca environment add`
 
 The VM is Flatcar Container Linux: immutable, Docker built in, nothing installed, updates itself. Ignition, rendered by Terraform from `terraform/ignition.yaml.tftpl`, is everything the VM is: the SSH key, the data-disk filesystem and mount, `/home/orca → /var/lib/orca/home`, `compose.yaml`, and two units: `orca-env.service` fetches the secret with the VM's own service account (retrying until a version exists), `orca.service` runs `docker compose up -d` from the `docker:cli` image. Rotate a secret: `make secret`, reboot.
 
-Network: own VPC, no firewall rule, so nothing reaches the VM from the internet. SSH answers on the tailnet address only: `ssh core@<name>` (`make ssh`, `make logs`). Without Tailscale, the serial console shows the boot log.
+Network: own VPC, nothing reaches the VM from the internet. SSH answers on the tailnet address: `ssh core@<name>` (`make ssh`, `make logs`). The one firewall rule is the break-glass for when the stack is down: SSH from Google's IAP range only, `gcloud compute ssh <name> --tunnel-through-iap`, which needs an IAM identity of the project. The serial console shows the boot log, including the two units' output.
 
 Rebuild the VM: `terraform -chdir=terraform apply -replace=google_compute_instance.vm`. The data disk keeps the checkouts, the Tailscale identity and the pairing. The disk has `prevent_destroy`; the images on the boot disk are pulled again.
 
@@ -85,7 +85,7 @@ Per host, into the Secure Note:
 
 - **`TS_AUTHKEY`**: admin console → Settings → Keys → Generate auth key: reusable off, ephemeral off, tags on with `tag:orca-host`. Read once, at the first start; after that the identity is on the data disk.
 - **`CLAUDE_CODE_OAUTH_TOKEN`**: `claude setup-token` on the laptop.
-- **`GH_TOKEN`**: a classic personal access token with `repo` and `read:packages`, nothing else. Fine-grained tokens cannot read packages.
+- **`GH_TOKEN`**: a fine-grained personal access token, resource owner the organisation, repositories you will work on, permissions Contents and Pull requests read/write. The organisation refuses classic tokens.
 - **`GIT_AUTHOR_NAME`**, **`GIT_AUTHOR_EMAIL`**, **`ORCA_PAIRING`**.
 
 | Step | Today | Target |

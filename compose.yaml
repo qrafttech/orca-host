@@ -5,7 +5,7 @@
 #   TS_AUTHKEY               Tailscale auth key, tagged, preauthorized, single-use. Only read on the first start;
 #                            the node identity then lives in <ORCA_DATA>/tailscale.
 #   CLAUDE_CODE_OAUTH_TOKEN  from `claude setup-token`
-#   GH_TOKEN                 GitHub token: repo, read:packages (this image) — the only GitHub credential on the host
+#   GH_TOKEN                 fine-grained GitHub token (Contents, Pull requests) — the only GitHub credential on the host
 #   GIT_AUTHOR_NAME / GIT_AUTHOR_EMAIL   git identity, also used as committer
 #   ORCA_PAIRING             desktop | mobile — which pairing link `orca serve` prints (one at a time)
 #   TS_HOSTNAME              the host's name on the tailnet (set by the VM's unit)

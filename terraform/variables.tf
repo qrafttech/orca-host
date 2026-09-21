@@ -21,15 +21,15 @@ variable "machine_type" {
 }
 
 variable "data_disk_gb" {
-  description = "The data disk (/home/orca, tailscale identity). About 12 GB per stack. Can only grow."
+  description = "The data disk: /home/orca (checkouts, worktrees, ~/.claude) and the Tailscale identity. Grows live, never shrinks."
   type        = number
-  default     = 100
+  default     = 50
 }
 
 variable "boot_disk_gb" {
-  description = "The boot disk: the OS and the docker images. Replaced with the VM."
+  description = "The boot disk: the OS, the docker images and their volumes. Replaced with the VM."
   type        = number
-  default     = 50
+  default     = 20
 }
 
 variable "ssh_public_key" {
