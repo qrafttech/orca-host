@@ -20,11 +20,12 @@ fi
 
 export HOME=/home/orca
 cd "$HOME"
-# Claude Code's first-run questions (theme, login, bypass-permissions acceptance), answered up front. Merged at
-# every start: Claude rewrites this file and a fresh one loses the answers.
+# Claude Code's first-run questions (theme, login, bypass-permissions acceptance) answered up front, and the home
+# trusted as a workspace, which covers every worktree under it. Merged at every start: Claude rewrites this file.
 [ -f .claude.json ] || echo '{}' > .claude.json
-jq --arg v "$(claude --version | cut -d' ' -f1)" \
-  '. + {hasCompletedOnboarding: true, lastOnboardingVersion: $v, theme: "dark", bypassPermissionsModeAccepted: true}' \
+jq --arg v "$(claude --version | cut -d' ' -f1)" --arg home "$HOME" \
+  '. + {hasCompletedOnboarding: true, lastOnboardingVersion: $v, theme: "dark", bypassPermissionsModeAccepted: true}
+   | .projects[$home] += {hasTrustDialogAccepted: true}' \
   .claude.json > .claude.json.tmp && mv .claude.json.tmp .claude.json
 
 if [ -z "${PAIRING_ADDRESS:-}" ]; then
