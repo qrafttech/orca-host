@@ -1,0 +1,55 @@
+# orca-host stack: Tailscale + Orca, both on the host's network. Everything personal comes from one env file:
+#   docker compose --env-file <file> up -d
+# The variables below are the whole contract of a host. `:?` = required, `:-` = default.
+#
+#   TS_AUTHKEY               Tailscale auth key, tagged, preauthorized, single-use. Only read on the first start;
+#                            the node identity then lives in <ORCA_DATA>/tailscale.
+#   CLAUDE_CODE_OAUTH_TOKEN  from `claude setup-token`
+#   GH_TOKEN                 GitHub token: repo, read:packages (this image) — the only GitHub credential on the host
+#   GIT_AUTHOR_NAME / GIT_AUTHOR_EMAIL   git identity, also used as committer
+#   ORCA_PAIRING             desktop | mobile — which pairing link `orca serve` prints (one at a time)
+#   TS_HOSTNAME              the host's name on the tailnet (set by the VM's unit)
+#   ORCA_DATA                where state lives on the host: home/ and tailscale/ (set by the VM's unit)
+#   ORCA_IMAGE_TAG           which build of this image to run (set by the VM's unit)
+#   PAIRING_ADDRESS          only on a laptop, see compose.laptop.yaml
+
+services:
+  tailscale:
+    image: tailscale/tailscale:v1.102.4
+    container_name: tailscale
+    network_mode: host
+    cap_add: [NET_ADMIN]
+    devices: [/dev/net/tun:/dev/net/tun]
+    environment:
+      TS_AUTHKEY: ${TS_AUTHKEY:-}
+      TS_AUTH_ONCE: "true"
+      TS_HOSTNAME: ${TS_HOSTNAME:-orca-host}
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_USERSPACE: "false"
+    volumes:
+      - ${ORCA_DATA:-./data}/tailscale:/var/lib/tailscale
+    restart: unless-stopped
+
+  orca-host:
+    image: ghcr.io/qrafttech/orca-host:${ORCA_IMAGE_TAG:-main}
+    container_name: orca-host
+    network_mode: host
+    init: true
+    depends_on: [tailscale]
+    environment:
+      CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:?}
+      GH_TOKEN: ${GH_TOKEN:?}
+      GIT_AUTHOR_NAME: ${GIT_AUTHOR_NAME:?}
+      GIT_AUTHOR_EMAIL: ${GIT_AUTHOR_EMAIL:?}
+      GIT_COMMITTER_NAME: ${GIT_AUTHOR_NAME:?}
+      GIT_COMMITTER_EMAIL: ${GIT_AUTHOR_EMAIL:?}
+      ORCA_PAIRING: ${ORCA_PAIRING:-desktop}
+    volumes:
+      # same path inside and outside: a project's compose file may bind-mount /home/orca/<project>/...
+      - ${ORCA_DATA:-./data}/home:/home/orca
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
+    logging:
+      options:
+        max-size: 10m
+        max-file: "3"

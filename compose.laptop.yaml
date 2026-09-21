@@ -1,0 +1,18 @@
+# Laptop override, for trying the image on a Mac. Docker Desktop has no /dev/net/tun and no host network: the
+# laptop's own Tailscale is the tailnet node, Orca advertises the laptop's tailnet IP. Its bind mounts refuse
+# unix sockets, which Orca needs in its home: the home is a named volume here. Same-path bind mounts do not hold.
+#   docker compose -f compose.yaml -f compose.laptop.yaml --env-file env up -d
+services:
+  tailscale:
+    profiles: [vm]
+  orca-host:
+    image: ${ORCA_IMAGE:-orca-host:dev}
+    network_mode: !reset null
+    depends_on: !reset []
+    ports: ["6768:6768"]
+    environment:
+      PAIRING_ADDRESS: ${PAIRING_ADDRESS:?the laptop's tailnet IP, `tailscale ip -4`}
+    volumes:
+      - orca-home:/home/orca
+volumes:
+  orca-home:

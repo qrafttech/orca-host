@@ -1,0 +1,9 @@
+# per-person values and local state
+terraform/terraform.tfvars
+terraform/.terraform/
+terraform/*.tfstate*
+# the env file rendered by `make env`
+env
+# laptop compose state
+data/
+.pairing-url
