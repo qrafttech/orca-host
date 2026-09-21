@@ -81,11 +81,17 @@ Before the first host, once:
 - **Terraform's GCP login**: `gcloud auth application-default login`. Separate from `gcloud auth login`.
 - **The Tailscale tag**, once per tailnet: admin console → Access controls → Tags → Create tag: name `orca-host`, owner `autogroup:admin` (in the policy file: `"tagOwners": {"tag:orca-host": ["autogroup:admin"]}`). Tagged nodes never expire.
 
+  ![Create tag](docs/tailscale-tag.png)
+
 Per host, into the Secure Note:
 
 - **`TS_AUTHKEY`**: admin console → Settings → Keys → Generate auth key: reusable off, ephemeral off, tags on with `tag:orca-host`. Read once, at the first start; after that the identity is on the data disk.
+
+  ![Generate auth key](docs/tailscale-auth-key.png)
 - **`CLAUDE_CODE_OAUTH_TOKEN`**: `claude setup-token` on the laptop.
 - **`GH_TOKEN`**: a classic personal access token with the `repo` scope, nothing else: one token for every organisation you belong to. GHCR and multi-organisation access both rule out fine-grained tokens; the organisation must allow classic tokens (Settings → Personal access tokens).
+
+  ![Token scopes](docs/github-token.png)
 - **`GIT_AUTHOR_NAME`**, **`GIT_AUTHOR_EMAIL`**, **`ORCA_PAIRING`**.
 
 | Step | Today | Target |
