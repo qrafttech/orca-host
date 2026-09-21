@@ -11,7 +11,8 @@ SECRET  := orca-host-$(NAME)-env
 OP_VAULT ?= Private
 OP      := op://$(OP_VAULT)/orca-host/notesPlain
 TF      := terraform -chdir=terraform
-SSH     := ssh -o StrictHostKeyChecking=accept-new   # a new host is a new key, by construction
+# Every rebuild is a new host key, and the tailnet already authenticates the peer: no host-key check for this host.
+SSH     := ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR
 
 .PHONY: build up down env secret bootstrap init plan apply pair restart logs shell ssh
 
@@ -55,13 +56,13 @@ pair:               ## read the pairing URL over the tailnet, pair the desktop c
 	orca status --environment $(NAME)
 
 restart:            ## re-run the stack: new secret version, new image under the same tag. Ends live terminals.
-	ssh core@$(NAME) sudo systemctl restart orca-env orca
+	$(SSH) core@$(NAME) sudo systemctl restart orca-env orca
 
 logs:
-	ssh core@$(NAME) docker logs -f --tail 100 orca-host
+	$(SSH) core@$(NAME) docker logs -f --tail 100 orca-host
 
 shell:              ## a shell in the Orca container, as `orca`, the same paths an Orca terminal sees
-	ssh -t core@$(NAME) docker exec -it -u orca orca-host bash
+	$(SSH) -t core@$(NAME) docker exec -it -u orca orca-host bash
 
 ssh:                ## a shell on the VM itself, as `core`
-	ssh core@$(NAME)
+	$(SSH) core@$(NAME)
