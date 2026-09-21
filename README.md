@@ -41,6 +41,7 @@ GH_TOKEN=...                       classic, `repo` scope
 GIT_AUTHOR_NAME=...
 GIT_AUTHOR_EMAIL=...
 ORCA_PAIRING=desktop               or mobile
+CLAUDE_PERMISSION_MODE=auto        optional: the permission mode of Claude panes, as in your own settings.json
 ```
 
 The file is the body of a 1Password Secure Note named `orca-host`, in the vault `OP_VAULT` (`Private` by default; `export OP_VAULT="..."` or pass it to `make`). `make env` renders it to `./env` for a laptop; `make secret` sends it to the host's secret. 1Password is never on the host.

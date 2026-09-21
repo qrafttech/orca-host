@@ -27,6 +27,14 @@ cd "$HOME"
 jq --arg v "$(claude --version | cut -d' ' -f1)" \
   '. + {hasCompletedOnboarding: true, lastOnboardingVersion: $v, theme: "dark", bypassPermissionsModeAccepted: true}' \
   .claude.json > .claude.json.tmp && mv .claude.json.tmp .claude.json
+# The permission mode of interactive panes (CLAUDE_PERMISSION_MODE: default | acceptEdits | auto | plan), merged into
+# the user settings, which Orca also writes to (its hooks): merge, never overwrite.
+if [ -n "${CLAUDE_PERMISSION_MODE:-}" ]; then
+  mkdir -p .claude
+  [ -f .claude/settings.json ] || echo '{}' > .claude/settings.json
+  jq --arg m "$CLAUDE_PERMISSION_MODE" '.permissions.defaultMode = $m' \
+    .claude/settings.json > .claude/settings.json.tmp && mv .claude/settings.json.tmp .claude/settings.json
+fi
 
 if [ -z "${PAIRING_ADDRESS:-}" ]; then
   echo "waiting for tailscale0"
