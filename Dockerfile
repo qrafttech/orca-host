@@ -8,15 +8,19 @@ ARG GH_VERSION=2.101.0
 ARG DOCKER_VERSION=29.8.1
 
 # --- Orca: the official AppImage, extracted once (no FUSE in a container) ---------------------------------
+# An AppImage is an ELF runtime with a squashfs appended: unsquashfs at the runtime's size extracts it without
+# executing anything, so the arm64 image builds under QEMU (the AppImage magic bytes in the ELF header make the
+# kernel's binfmt rule refuse to run it there).
 FROM debian:12-slim AS orca
 ARG ORCA_VERSION
 ARG TARGETARCH
-WORKDIR /opt
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl && rm -rf /var/lib/apt/lists/*
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl binutils squashfs-tools \
+ && rm -rf /var/lib/apt/lists/*
 RUN case "$TARGETARCH" in amd64) asset=orca-linux.AppImage ;; arm64) asset=orca-linux-arm64.AppImage ;; *) exit 1 ;; esac \
  && curl -fsSL -o /tmp/orca.AppImage "https://github.com/stablyai/orca/releases/download/v${ORCA_VERSION}/${asset}" \
- && chmod +x /tmp/orca.AppImage \
- && /tmp/orca.AppImage --appimage-extract >/dev/null && mv squashfs-root orca \
+ && offset=$(readelf -h /tmp/orca.AppImage | awk '/Start of section headers/ {o=$5} /Size of section headers/ {s=$5} /Number of section headers/ {n=$5} END {print o + s * n}') \
+ && unsquashfs -q -n -o "$offset" -d /opt/orca /tmp/orca.AppImage >/dev/null \
  && chmod -R a+rX /opt/orca && rm /tmp/orca.AppImage
 
 # --- Claude Code: the native binary, checksum from the release manifest --------------------------------------

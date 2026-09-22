@@ -28,7 +28,7 @@ laptop / phone ──tailnet──▶ VM (Flatcar Container Linux, Ignition)
 
 `orca serve` from the official AppImage, Claude Code, `gh`, `git`, the Docker CLI with compose, and `ruby`, `python3`, `node` for projects' Claude Code hooks, which run next to `claude`, not in the project's containers (the app's runtime, at its version, lives there). Runs as the unprivileged user `orca`; the entrypoint gives it the Docker socket's group, waits for `tailscale0` (or takes `PAIRING_ADDRESS`), seeds `~/.claude.json` with the bypass-permissions acceptance, and execs `orca serve --json`. Versions are build args at the top of the `Dockerfile`; a bump is a PR that says why.
 
-CI builds every push, runs the ready-contract smoke test, and pushes `ghcr.io/qrafttech/orca-host:<branch>` and `:sha-<sha>`; `main` also gets a multi-arch build. `make build` builds `orca-host:dev` for this machine.
+CI builds every push, runs the ready-contract smoke test, and pushes `ghcr.io/qrafttech/orca-host:<branch>` and `:sha-<sha>`; `make build` builds `orca-host:dev` for this machine.
 
 ## The stack
 
