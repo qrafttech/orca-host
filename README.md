@@ -41,11 +41,11 @@ GH_TOKEN=...                       classic, `repo` + `read:org` scopes
 GIT_AUTHOR_NAME=...
 GIT_AUTHOR_EMAIL=...
 CLAUDE_PERMISSION_MODE=auto        optional: the permission mode of Claude panes
-CLAUDE_SETTINGS_REPO=me/claude     optional: your Claude settings, versioned; `permissions`, CLAUDE.md, skills, user MCP servers are taken
+CLAUDE_SETTINGS_REPO=me/claude     optional: your Claude settings, versioned; `permissions`, CLAUDE.md, skills, user MCP servers and their binaries are taken
 CLAUDE_SETTINGS_FILE=config/settings.json   where settings.json is in that repository
 ```
 
-Your Claude preferences, two ways: `CLAUDE_PERMISSION_MODE` alone sets the permission mode; `CLAUDE_SETTINGS_REPO` takes `permissions` from your own settings repository (only that: hooks and status lines point at laptop things), plus a `CLAUDE.md` and a `.claude/skills` at its root as the global ones, and merges `config/mcp.json` (if present) into the user-level MCP servers — never overwriting one already configured. Neither set: Claude's defaults, it asks. Workspace trust stays a question, once per project, as on a laptop.
+Your Claude preferences, two ways: `CLAUDE_PERMISSION_MODE` alone sets the permission mode; `CLAUDE_SETTINGS_REPO` takes `permissions` from your own settings repository (only that: hooks and status lines point at laptop things), plus a `CLAUDE.md` and a `.claude/skills` at its root as the global ones, merges `config/mcp.json` (if present) into the user-level MCP servers — never overwriting one already configured — and installs whatever `config/bin.json` (if present) declares into `~/bin`, on the volume, checksum-verified. Neither set: Claude's defaults, it asks. Workspace trust stays a question, once per project, as on a laptop.
 
 The file is the body of a 1Password Secure Note named `orca-host`, in the vault `OP_VAULT` (`Private` by default; `export OP_VAULT="..."` or pass it to `make`). `make env` renders it to `./env` (gitignored) for a laptop when the file is absent — edit the local copy freely, `rm` it to refetch; `make secret` always reads 1Password and sends it to the host's secret. 1Password is never on the host.
 

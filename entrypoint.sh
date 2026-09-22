@@ -21,6 +21,9 @@ fi
 
 export HOME=/home/orca
 cd "$HOME"
+# Binaries a settings repo installs for itself (config/bin.json below) land in ~/bin, on the volume, not the
+# image — every user's tool choices, none of them baked into this shared image.
+export PATH="$HOME/bin:$PATH"
 # Claude Code's first-run questions (theme, login, bypass-permissions acceptance), answered up front. Merged at
 # every start: Claude rewrites this file. Workspace trust is per project and stays a question: it is keyed on the
 # checkout, covers its worktrees, and a checkout nested in a trusted folder is excluded by design.
@@ -55,6 +58,26 @@ if [ -n "${CLAUDE_SETTINGS_REPO:-}" ]; then
   if [ -f "$mcpfile" ]; then
     jq --slurpfile m "$mcpfile" '.mcpServers = (($m[0].mcpServers // {}) + (.mcpServers // {}))' \
       .claude.json > .claude.json.tmp && mv .claude.json.tmp .claude.json
+  fi
+  # Binaries a settings repo wants on PATH (config/bin.json: {"bin": {"<name>": {"<amd64|arm64>": {"url",
+  # "sha256"}}}}), fetched into ~/bin — generic (this script never names a specific tool), whatever's declared,
+  # checksum-verified, skipped once already installed and matching.
+  binfile="$repo/config/bin.json"
+  if [ -f "$binfile" ]; then
+    mkdir -p bin
+    arch=$(uname -m); case "$arch" in x86_64) arch=amd64 ;; aarch64) arch=arm64 ;; esac
+    for name in $(jq -r '.bin | keys[]' "$binfile"); do
+      url=$(jq -r --arg n "$name" --arg a "$arch" '.bin[$n][$a].url // empty' "$binfile")
+      sha=$(jq -r --arg n "$name" --arg a "$arch" '.bin[$n][$a].sha256 // empty' "$binfile")
+      if [ -z "$url" ] || [ -z "$sha" ]; then echo "bin/$name: no $arch build declared, skipping"; continue; fi
+      dest="bin/$name"
+      [ ! -f "$dest" ] || ! echo "$sha  $dest" | sha256sum -c - >/dev/null 2>&1 || continue
+      curl -fsSL -o "$dest.tmp" "$url" \
+        && echo "$sha  $dest.tmp" | sha256sum -c - \
+        && install -m 755 "$dest.tmp" "$dest" \
+        || echo "bin/$name: install failed, keeping the last copy"
+      rm -f "$dest.tmp"
+    done
   fi
 fi
 
