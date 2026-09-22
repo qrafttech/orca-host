@@ -41,7 +41,7 @@ if [ -n "${CLAUDE_PERMISSION_MODE:-}" ]; then
   settings --arg m "$CLAUDE_PERMISSION_MODE" '.permissions.defaultMode = $m'
 fi
 if [ -n "${CLAUDE_SETTINGS_REPO:-}" ]; then
-  repo="$HOME/.claude-settings"
+  repo="$HOME/claude"
   if [ -d "$repo/.git" ]; then git -C "$repo" pull -q --ff-only || echo "settings repo: pull failed, keeping the last copy"
   else gh repo clone "$CLAUDE_SETTINGS_REPO" "$repo" -- -q || echo "settings repo: clone failed"
   fi
