@@ -49,6 +49,13 @@ if [ -n "${CLAUDE_SETTINGS_REPO:-}" ]; then
   [ ! -f "$file" ] || settings --slurpfile s "$file" '.permissions = $s[0].permissions'
   [ -e .claude/CLAUDE.md ] || [ ! -f "$repo/CLAUDE.md" ] || ln -s "$repo/CLAUDE.md" .claude/CLAUDE.md
   [ -e .claude/skills ] || [ ! -d "$repo/.claude/skills" ] || ln -s "$repo/.claude/skills" .claude/skills
+  # User-level MCP servers (config/mcp.json in the settings repo): merged in, never overwriting a server
+  # already present (manually added, or from a previous merge with local edits).
+  mcpfile="$repo/config/mcp.json"
+  if [ -f "$mcpfile" ]; then
+    jq --slurpfile m "$mcpfile" '.mcpServers = (($m[0].mcpServers // {}) + (.mcpServers // {}))' \
+      .claude.json > .claude.json.tmp && mv .claude.json.tmp .claude.json
+  fi
 fi
 
 if [ -z "${PAIRING_ADDRESS:-}" ]; then

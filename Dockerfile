@@ -6,6 +6,7 @@ ARG ORCA_VERSION=1.4.205
 ARG CLAUDE_CODE_VERSION=2.1.276
 ARG GH_VERSION=2.101.0
 ARG DOCKER_VERSION=29.8.1
+ARG SLACK_MCP_SERVER_VERSION=1.3.0
 
 # --- Orca: the official AppImage, extracted once (no FUSE in a container) ---------------------------------
 # An AppImage is an ELF runtime with a squashfs appended: unsquashfs at the runtime's size extracts it without
@@ -45,6 +46,21 @@ RUN curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_$
     | tar -xz -C /tmp \
  && install -m 755 "/tmp/gh_${GH_VERSION}_linux_${TARGETARCH}/bin/gh" /usr/local/bin/gh
 
+# --- slack-mcp-server: pinned binary, checksum computed at pin time (project publishes no manifest) -----------
+FROM debian:12-slim AS slack-mcp-server
+ARG SLACK_MCP_SERVER_VERSION
+ARG TARGETARCH
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl && rm -rf /var/lib/apt/lists/*
+RUN case "$TARGETARCH" in \
+      amd64) asset=slack-mcp-server-linux-amd64; sha=d1525962e9b9dbfdd2eaf48d0a81ca1eca7d8f1862b8d34931b812c850b3e568 ;; \
+      arm64) asset=slack-mcp-server-linux-arm64; sha=a307a48d16c2261346bdc257274cdcdb8b2027c867dc971b41d52cef36472c88 ;; \
+      *) exit 1 ;; \
+    esac \
+ && curl -fsSL -o /tmp/slack-mcp-server "https://github.com/korotovsky/slack-mcp-server/releases/download/v${SLACK_MCP_SERVER_VERSION}/${asset}" \
+ && echo "$sha  /tmp/slack-mcp-server" | sha256sum -c - \
+ && install -D -m 755 /tmp/slack-mcp-server /usr/local/bin/slack-mcp-server
+
 # --- docker CLI + compose plugin, static binaries from the official image ------------------------------------
 FROM docker:${DOCKER_VERSION}-cli AS docker-cli
 
@@ -67,6 +83,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=orca /opt/orca /opt/orca
 COPY --from=claude /opt/claude /opt/claude
 COPY --from=gh /usr/local/bin/gh /usr/local/bin/gh
+COPY --from=slack-mcp-server /usr/local/bin/slack-mcp-server /usr/local/bin/slack-mcp-server
 COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
 COPY --from=docker-cli /usr/local/libexec/docker/cli-plugins/docker-compose /usr/local/libexec/docker/cli-plugins/docker-compose
 
