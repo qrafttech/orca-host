@@ -40,7 +40,6 @@ CLAUDE_CODE_OAUTH_TOKEN=...        from `claude setup-token`
 GH_TOKEN=...                       classic, `repo` scope
 GIT_AUTHOR_NAME=...
 GIT_AUTHOR_EMAIL=...
-ORCA_PAIRING=desktop               or mobile
 CLAUDE_PERMISSION_MODE=auto        optional: the permission mode of Claude panes
 CLAUDE_SETTINGS_REPO=me/claude     optional: your Claude settings, versioned; `permissions`, CLAUDE.md, skills are taken
 CLAUDE_SETTINGS_FILE=config/settings.json   where settings.json is in that repository
@@ -63,7 +62,7 @@ make bootstrap   # once per project: the state bucket
 make init        # once per checkout
 make apply       # VPC, service account, secret, data disk + daily snapshots, VM
 make secret      # the env file, from 1Password, into Secret Manager
-make pair        # pairing URL over the tailnet → `orca environment add`
+make pair        # the desktop client, then the phone, then the server back to its desktop link
 ```
 
 The VM is Flatcar Container Linux: immutable, Docker built in, nothing installed, updates itself. Ignition, rendered by Terraform from `terraform/ignition.yaml.tftpl`, is everything the VM is: the SSH key, the data-disk filesystem and mount, `/home/orca → /var/lib/orca/home`, `compose.yaml`, and two units: `orca-env.service` fetches the secret with the VM's own service account (retrying until a version exists), `orca.service` runs `docker compose up -d` from the `docker:cli` image. Rotate a secret, or pick up a new image under the same tag: `make secret`, `make restart`.
@@ -82,7 +81,7 @@ Host <name>
 
 ## Pairing and projects
 
-`make pair` reads the `orca_server_ready` line from the container's logs and hands `pairing.url` to `orca environment add`. Then in the app: Settings → Remote Orca Servers → Advanced → Active Server. For a phone: `ORCA_PAIRING=mobile` in the env file, `make secret`, restart the stack, and scan the QR of the URL (`qrencode -t ansiutf8 '<URL>'`). The URL is a credential; pairing survives restarts and rebuilds.
+`make pair` pairs both clients, in two steps. `make pair-desktop` reads the `orca_server_ready` line from the container's logs and hands `pairing.url` to `orca environment add`; then in the app: Settings → Remote Orca Servers → Advanced → Active Server. `orca serve` prints one pairing link per process, the desktop one by default, so `make pair-mobile` appends `ORCA_PAIRING=mobile` to the env file on the host, restarts the container, shows the new link as a QR in the terminal to scan from the phone (Tailscale on, same tailnet), and, on Enter, restarts the env fetch and the container: the file is the secret again, the server is back on its desktop link. Two container restarts, at setup time, before any project is cloned; interrupted between the two, `make restart` is the way back. The URL is a credential; both pairings survive restarts and rebuilds.
 
 Add a project in the app: Set project location → Clone from URL, the https URL, destination `/home/orca` (the repository name is appended). `git` authenticates through `gh` with `GH_TOKEN`: no login, no key. `make shell` is a shell in the container as `orca`, the same paths an Orca terminal sees. A worktree's setup hook runs `docker compose` on the VM's Docker; what it starts is reachable at `http://<tailnet IP>:<port>`.
 
@@ -94,6 +93,7 @@ Before the first host, once:
 - **The Tailscale tag**, once per tailnet: admin console → Access controls → Tags → Create tag: name `orca-host`, owner `autogroup:admin` (in the policy file: `"tagOwners": {"tag:orca-host": ["autogroup:admin"]}`). Tagged nodes never expire.
 
   ![Create tag](docs/tailscale-tag.png)
+- **Tailscale on the phone**, on the same tailnet: the mobile client reaches the host over it too.
 
 Per host, into the Secure Note:
 
@@ -104,7 +104,7 @@ Per host, into the Secure Note:
 - **`GH_TOKEN`**: a classic personal access token with the `repo` scope, nothing else: one token for every organisation you belong to. GHCR and multi-organisation access both rule out fine-grained tokens; the organisation must allow classic tokens (Settings → Personal access tokens).
 
   ![Token scopes](docs/github-token.png)
-- **`GIT_AUTHOR_NAME`**, **`GIT_AUTHOR_EMAIL`**, **`ORCA_PAIRING`**.
+- **`GIT_AUTHOR_NAME`**, **`GIT_AUTHOR_EMAIL`**.
 
 And into the Secure Note `orca-host-tfvars`: `terraform/terraform.tfvars.example`, filled in.
 
@@ -117,6 +117,6 @@ And into the Secure Note `orca-host-tfvars`: `terraform/terraform.tfvars.example
 | state bucket | `make bootstrap` | — |
 | env file into Secret Manager | `make secret` | — |
 | pairing | `make pair` | from the Orca client |
-| mobile pairing | `ORCA_PAIRING=mobile`, `make secret`, restart, QR on the laptop | from the desktop client |
+| mobile pairing | `make pair`, QR on the laptop | from the desktop client |
 | first clone of a project | the app, Clone from URL | — |
 | Claude Code workspace trust | first Claude pane of a project, once, covers its worktrees — as on a laptop | — |
