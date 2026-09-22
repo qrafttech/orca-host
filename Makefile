@@ -1,20 +1,32 @@
 # orca-host, laptop side. Needs: docker, terraform, gcloud, op (1Password CLI), jq, ssh, the Orca desktop CLI.
-# Per-host values are read from terraform/terraform.tfvars; the env file is the body of a 1Password Secure Note
-# named orca-host, in the vault OP_VAULT (override: `make secret OP_VAULT="My Vault"`, or export it).
+# The two per-person files are gitignored and come from 1Password when absent: terraform/terraform.tfvars is the
+# body of a Secure Note named orca-host-tfvars, the env file of one named orca-host, both in the vault OP_VAULT
+# (override: `make secret OP_VAULT="My Vault"`, or export it). Edit the local copies freely; `rm` one to refetch it.
 TFVARS  := terraform/terraform.tfvars
-NAME    := $(shell sed -n 's/^name *= *"\(.*\)".*/\1/p' $(TFVARS))
-PROJECT := $(shell sed -n 's/^project *= *"\(.*\)".*/\1/p' $(TFVARS))
-ZONE    := $(or $(shell sed -n 's/^zone *= *"\(.*\)".*/\1/p' $(TFVARS)),europe-west9-b)
-REGION  := $(shell echo $(ZONE) | sed 's/-[a-z]$$//')
-BUCKET  := $(PROJECT)-tfstate
-SECRET  := orca-host-$(NAME)-env
+# `=`, not `:=`: expanded in recipes, after the $(TFVARS) rule has fetched the file. At parse time it may not exist.
+NAME     = $(shell sed -n 's/^name *= *"\(.*\)".*/\1/p' $(TFVARS))
+PROJECT  = $(shell sed -n 's/^project *= *"\(.*\)".*/\1/p' $(TFVARS))
+ZONE     = $(or $(shell sed -n 's/^zone *= *"\(.*\)".*/\1/p' $(TFVARS)),europe-west9-b)
+REGION   = $(shell echo $(ZONE) | sed 's/-[a-z]$$//')
+BUCKET   = $(PROJECT)-tfstate
+SECRET   = orca-host-$(NAME)-env
 OP_VAULT ?= Private
-OP      := op://$(OP_VAULT)/orca-host/notesPlain
+OP        := op://$(OP_VAULT)/orca-host/notesPlain
+OP_TFVARS := op://$(OP_VAULT)/orca-host-tfvars/notesPlain
 TF      := terraform -chdir=terraform
 # Every rebuild is a new host key, and the tailnet already authenticates the peer: no host-key check for this host.
 SSH     := ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR
 
-.PHONY: build up down env secret bootstrap init plan apply pair restart logs shell ssh
+.PHONY: build up down secret bootstrap init plan apply pair restart logs shell ssh
+# A failed `op read` (locked vault, missing note) must not leave an empty file that Make then takes as up to date.
+.DELETE_ON_ERROR:
+
+## the per-person files, from 1Password when absent
+env:                ## the env file, into ./env
+	op read "$(OP)" > $@ && chmod 600 $@
+
+$(TFVARS):          ## the host's name, project, zone, SSH key, into terraform/terraform.tfvars
+	op read "$(OP_TFVARS)" > $@
 
 ## image and stack, on this laptop
 build:              ## build the image for this machine's architecture, as orca-host:dev
@@ -26,10 +38,9 @@ up: env             ## run the stack here, advertised on this laptop's tailnet I
 down:
 	docker compose -f compose.yaml -f compose.laptop.yaml --env-file env down
 
-env:                ## the env file, from 1Password, into ./env (gitignored)
-	op read "$(OP)" > env && chmod 600 env
-
 ## host, on GCP
+secret bootstrap init plan apply pair restart logs shell ssh: $(TFVARS)
+
 secret:             ## the env file, from 1Password, as a new version of the host's secret
 	op read "$(OP)" | gcloud secrets versions add $(SECRET) --data-file=- --project $(PROJECT)
 
@@ -39,7 +50,7 @@ bootstrap:          ## once per project: the state bucket
 	    --uniform-bucket-level-access --public-access-prevention
 	gcloud storage buckets update gs://$(BUCKET) --versioning >/dev/null
 
-init:               ## terraform init against the state bucket, one prefix per host
+init:               ## terraform init against the state bucket, one prefix per host. Once per checkout.
 	$(TF) init -backend-config=bucket=$(BUCKET) -backend-config=prefix=orca-host/$(NAME)
 
 plan:
