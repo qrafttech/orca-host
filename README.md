@@ -37,7 +37,7 @@ CI builds every push, runs the ready-contract smoke test, and pushes `ghcr.io/qr
 ```
 TS_AUTHKEY=tskey-auth-...          tagged tag:orca-host, preauthorized, single-use; read on the first start only
 CLAUDE_CODE_OAUTH_TOKEN=...        from `claude setup-token`
-GH_TOKEN=...                       classic, `repo` scope
+GH_TOKEN=...                       classic, `repo` + `read:org` scopes
 GIT_AUTHOR_NAME=...
 GIT_AUTHOR_EMAIL=...
 CLAUDE_PERMISSION_MODE=auto        optional: the permission mode of Claude panes
@@ -101,7 +101,7 @@ Per host, into the Secure Note:
 
   ![Generate auth key](docs/tailscale-auth-key.png)
 - **`CLAUDE_CODE_OAUTH_TOKEN`**: `claude setup-token` on the laptop.
-- **`GH_TOKEN`**: a classic personal access token with the `repo` scope, nothing else: one token for every organisation you belong to. GHCR and multi-organisation access both rule out fine-grained tokens; the organisation must allow classic tokens (Settings → Personal access tokens).
+- **`GH_TOKEN`**: a classic personal access token with the `repo` and `read:org` scopes: one token for every organisation you belong to. GHCR and multi-organisation access both rule out fine-grained tokens; the organisation must allow classic tokens (Settings → Personal access tokens). `read:org` is required by the mobile app's GitHub source picker (organisation/repo lookups over GraphQL); without it, creating a worktree from mobile fails.
 
   ![Token scopes](docs/github-token.png)
 - **`GIT_AUTHOR_NAME`**, **`GIT_AUTHOR_EMAIL`**.
