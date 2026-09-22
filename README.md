@@ -48,7 +48,7 @@ CLAUDE_SETTINGS_FILE=config/settings.json   where settings.json is in that repos
 
 Your Claude preferences, two ways: `CLAUDE_PERMISSION_MODE` alone sets the permission mode; `CLAUDE_SETTINGS_REPO` takes `permissions` from your own settings repository (only that: hooks and status lines point at laptop things), plus a `CLAUDE.md` and a `.claude/skills` at its root as the global ones. Neither set: Claude's defaults, it asks. Workspace trust stays a question, once per project, as on a laptop.
 
-The file is the body of a 1Password Secure Note named `orca-host`, in the vault `OP_VAULT` (`Private` by default; `export OP_VAULT="..."` or pass it to `make`). `make env` renders it to `./env` for a laptop; `make secret` sends it to the host's secret. 1Password is never on the host.
+The file is the body of a 1Password Secure Note named `orca-host`, in the vault `OP_VAULT` (`Private` by default; `export OP_VAULT="..."` or pass it to `make`). `make env` renders it to `./env` (gitignored) for a laptop when the file is absent — edit the local copy freely, `rm` it to refetch; `make secret` always reads 1Password and sends it to the host's secret. 1Password is never on the host.
 
 Tailscale identity, Orca state and checkouts are under `ORCA_DATA` on the host (`/var/lib/orca` on the VM). Stopping the stack ends live terminals, as a service restart does.
 
@@ -56,12 +56,11 @@ On a Mac, `make up`: `compose.laptop.yaml` drops the Tailscale service (Docker D
 
 ## The host
 
-One person, one `terraform apply`, one state. `terraform.tfvars` (gitignored) holds the name, project, zone, size and your SSH public key; state goes to a bucket in your project. Terraform authenticates with Application Default Credentials, which are separate from `gcloud auth login`: `gcloud auth application-default login` once.
+One person, one `terraform apply`, one state. `terraform/terraform.tfvars` holds the name, project, zone, size and your SSH public key: `terraform/terraform.tfvars.example` filled in, as the body of a second Secure Note, `orca-host-tfvars`, in the same vault. Nothing in it is secret; the note is what makes it follow you to any checkout, worktree or laptop. Any `make` target that needs the file fetches it when absent (gitignored; edit it freely, `rm` it to refetch). State goes to a bucket in your project. Terraform authenticates with Application Default Credentials, which are separate from `gcloud auth login`: `gcloud auth application-default login` once.
 
 ```bash
-cp terraform/terraform.tfvars.example terraform/terraform.tfvars   # fill in
 make bootstrap   # once per project: the state bucket
-make init
+make init        # once per checkout
 make apply       # VPC, service account, secret, data disk + daily snapshots, VM
 make secret      # the env file, from 1Password, into Secret Manager
 make pair        # pairing URL over the tailnet → `orca environment add`
@@ -107,9 +106,12 @@ Per host, into the Secure Note:
   ![Token scopes](docs/github-token.png)
 - **`GIT_AUTHOR_NAME`**, **`GIT_AUTHOR_EMAIL`**, **`ORCA_PAIRING`**.
 
+And into the Secure Note `orca-host-tfvars`: `terraform/terraform.tfvars.example`, filled in.
+
 | Step | Today | Target |
 |---|---|---|
 | Tailscale tag | admin console, once per tailnet | — |
+| host name, project, zone, SSH key | laptop, into the Secure Note `orca-host-tfvars` | — |
 | Tailscale auth key | admin console, into the Secure Note | Tailscale API from `make secret` |
 | Claude token, GitHub token, git identity | laptop, into the Secure Note | — |
 | state bucket | `make bootstrap` | — |
