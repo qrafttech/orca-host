@@ -79,7 +79,8 @@ pair-mobile:        ## restart the server on its mobile link, show it as a QR fo
 	for i in $$(seq 1 24); do $(PAIRING_URL) > .pairing-url; test -s .pairing-url && break; sleep 5; done; \
 	  test -s .pairing-url || { echo "no pairing URL after 2 minutes: make logs"; rm -f .pairing-url; exit 1; }
 	qrencode -t ansiutf8 "$$(cat .pairing-url)"; cat .pairing-url; rm -f .pairing-url
-	@printf 'scan it from the phone (Tailscale on, same tailnet), then Enter: '; read -r _
+	@printf 'scan it from the phone (Tailscale on, same tailnet), then Enter: '; \
+	  read -r _ || { echo; echo "no terminal to wait on: scan it, then \`make restart\`"; exit 1; }
 	$(SSH) core@$(NAME) sudo systemctl restart orca-env orca
 
 restart:            ## re-run the stack: new secret version, new image under the same tag. Ends live terminals.
