@@ -15,7 +15,7 @@ jobs:
       - uses: hadolint/hadolint-action@v3.1.0
         with:
           dockerfile: Dockerfile
-      - run: shellcheck entrypoint.sh
+      - run: shellcheck entrypoint.sh reap-stacks.sh
       - uses: hashicorp/setup-terraform@v3
       - run: terraform -chdir=terraform fmt -check -diff
       - run: terraform -chdir=terraform init -backend=false && terraform -chdir=terraform validate
@@ -49,13 +49,21 @@ jobs:
           tags: ${{ env.IMAGE }}:smoke
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      - name: smoke test — the ready contract, as upstream tests it
+      - name: smoke test — the ready contract, as upstream tests it, and a deleted worktree's stack torn down
         run: |
+          # a compose stack started from a directory under /home/orca that no longer exists: gone once the server is up
+          sudo install -d -o "$USER" /home/orca/ghost
+          printf 'services:\n  s: {image: alpine:3.20, command: sleep infinity, stop_grace_period: 1s, volumes: [data:/data]}\nvolumes:\n  data:\n' > /home/orca/ghost/compose.yaml
+          docker compose -f /home/orca/ghost/compose.yaml up -d && rm -rf /home/orca/ghost
           docker run -d --name smoke -e PAIRING_ADDRESS=127.0.0.1 -v /var/run/docker.sock:/var/run/docker.sock ${{ env.IMAGE }}:smoke
           for i in $(seq 1 24); do
             sleep 5
             if docker logs smoke 2>/dev/null | jq -Rr 'fromjson? | select(.type=="orca_server_ready" and .schemaVersion==1) | .type' | grep -q .; then
-              echo "ready after $((i*5))s"; docker exec -u orca smoke docker version --format 'docker {{.Server.Version}} from the container'; exit 0
+              echo "ready after $((i*5))s"; docker exec -u orca smoke docker version --format 'docker {{.Server.Version}} from the container'
+              docker logs smoke 2>&1 | grep '^reap-stacks: ghost torn down'
+              left=$(docker ps -a --filter label=com.docker.compose.project=ghost --format '{{.Names}}'; docker volume ls --filter label=com.docker.compose.project=ghost --format '{{.Name}}')
+              [ -z "$left" ] || { echo "ghost stack left behind: $left"; exit 1; }
+              exit 0
             fi
           done
           docker logs smoke; exit 1

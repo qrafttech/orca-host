@@ -21,10 +21,12 @@ laptop / phone ──tailnet──▶ VM (Flatcar Container Linux, Ignition)
 | | Runs | Installed |
 |---|---|---|
 | The VM | Docker, and two containers: `tailscale` and `orca-host` | nothing else |
-| The `orca-host` container | `orca serve`, every Claude pane, every Orca terminal, a project's Claude Code hooks | `claude`, `gh`, `git`, the Docker CLI, `ruby`, `python3`, `node` |
+| The `orca-host` container | `orca serve`, every Claude pane, every Orca terminal, a project's Claude Code hooks, `reap-stacks` every 5 minutes | `claude`, `gh`, `git`, the Docker CLI, `ruby`, `python3`, `node` |
 | A project's containers | the app, its database, its cache: a worktree's stack | the app's runtime, at its version, from the project's compose |
 
 Beside, not inside: the `orca-host` container has the VM's Docker socket, so a `docker compose up` from an Orca terminal creates the project's containers on the VM's Docker, as siblings of `orca-host`. Same path everywhere: on the VM, `/home/orca` is a symlink to `/var/lib/orca/home`, which the container mounts at `/home/orca`, so a project's `./:/app` bind mount names the same files on both sides.
+
+**Deleted worktrees.** Orca deletes a worktree without telling the host, and the stack the worktree started stays behind: containers running, volumes kept. Every container compose starts carries two labels, its project and the directory it was started from, so every 5 minutes `reap-stacks` takes down, volumes included, every project whose directory is under `/home/orca` and no longer exists: `docker compose -p <name> down -v`, which acts on the labels and needs no compose file. One log line per stack torn down. Directories elsewhere (a laptop's stacks, the host's own `/opt/orca`) are out of reach. Not covered: a stack brought down without `-v` before its worktree is deleted leaves no container to name the directory, so its volumes stay; that case is the project's archive script.
 
 ## The image
 
@@ -38,12 +40,13 @@ The entrypoint starts as root, gives `orca` the Docker socket's group and its ho
 
 1. Seeds `~/.claude.json` with Claude Code's first-run answers (onboarding, theme, bypass-permissions acceptance). Merged at every start: Claude rewrites the file.
 2. Applies the Claude preferences, see [claude-settings.md](claude-settings.md).
-3. Waits for `tailscale0`, unless `PAIRING_ADDRESS` is given.
-4. `exec orca serve --port 6768 --pairing-address <IP> [--mobile-pairing] --json`.
+3. Starts the `reap-stacks` loop in the background, every 5 minutes, for as long as the container runs.
+4. Waits for `tailscale0`, unless `PAIRING_ADDRESS` is given.
+5. `exec orca serve --port 6768 --pairing-address <IP> [--mobile-pairing] --json`.
 
 ### CI
 
-`.github/workflows/ci.yml`, on every push: lint (hadolint, shellcheck, `terraform fmt` and `validate`), build amd64, smoke-test the ready contract (an `orca_server_ready` line with `schemaVersion: 1`, then `docker version` from inside the container), then push the multi-arch image as `<branch>` and `sha-<sha>`. The `main` tag moves; a host pinned to a build uses the sha tag as `image_tag`.
+`.github/workflows/ci.yml`, on every push: lint (hadolint, shellcheck, `terraform fmt` and `validate`), build amd64, smoke-test the ready contract (an `orca_server_ready` line with `schemaVersion: 1`, then `docker version` from inside the container) and the reaper (a compose stack started from a `/home/orca` directory that no longer exists is gone by the time the server is ready), then push the multi-arch image as `<branch>` and `sha-<sha>`. The `main` tag moves; a host pinned to a build uses the sha tag as `image_tag`.
 
 ## The stack
 
