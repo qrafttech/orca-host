@@ -22,7 +22,7 @@ laptop / phone ──tailnet──▶ VM (Flatcar Container Linux, Ignition)
 | | Runs | Installed |
 |---|---|---|
 | The VM | Docker, and two containers: `tailscale` and `orca-host` | nothing else |
-| The `orca-host` container | `orca serve`, every Claude pane, every Orca terminal, a project's Claude Code hooks, `prune-stacks` every 5 minutes | `claude`, `gh`, `git`, the Docker CLI, `ruby`, `python3`, `node` |
+| The `orca-host` container | `orca serve`, every Claude pane, every Orca terminal, a project's Claude Code hooks, `prune-stacks` every 5 minutes | `claude`, `gh`, `git`, the Docker CLI, `ruby`, `python3`, `node` with `npm` and `npx`, `uv` with `uvx` |
 | A project's containers | the app, its database, its cache: a worktree's stack | the app's runtime, at its version, from the project's compose |
 
 Beside, not inside: the `orca-host` container has the VM's Docker socket, so a `docker compose up` from an Orca terminal creates the project's containers on the VM's Docker, as siblings of `orca-host`. Same path everywhere: on the VM, `/home/orca` is a symlink to `/var/lib/orca/home`, which the container mounts at `/home/orca`, so a project's `./:/app` bind mount names the same files on both sides.
@@ -35,6 +35,7 @@ Beside, not inside: the `orca-host` container has the VM's Docker socket, so a `
 - Claude Code as the native binary, checksum-verified against the release manifest. `DISABLE_AUTOUPDATER=1`: the image is the version.
 - `gh`, `git`, the Docker CLI with the compose plugin. `git` authenticates to GitHub through `gh` (a `credential.helper` in the image), so `GH_TOKEN` is the only GitHub credential: no SSH key, no `gh auth login`.
 - `ruby`, `python3`, `node`: a project's Claude Code hooks run next to `claude`, not in the project's containers. The app's own runtime, at its own version, lives in those.
+- `npx` and `uvx`: an MCP server declared as `npx …` or `uvx …` (in a settings repo's `config/mcp.json`, or a project's `.mcp.json`) is fetched and started by them at session start, so both come with the image, node LTS from its official image (Debian's `nodejs` package has no npm) and `uv` from Astral's. `orca skills install` resolves to `npx` too.
 - Versions are build args at the top of the `Dockerfile`. Orca is pinned to the desktop client's version (protocol compatibility). A bump is a PR that says why.
 
 The entrypoint starts as root, gives `orca` the Docker socket's group and its home (a volume: empty and root-owned the first time), then re-executes as `orca`:
@@ -47,7 +48,7 @@ The entrypoint starts as root, gives `orca` the Docker socket's group and its ho
 
 ### CI
 
-`.github/workflows/ci.yml`, on every push: lint (hadolint, shellcheck, `terraform fmt` and `validate`), build amd64, smoke-test the ready contract (an `orca_server_ready` line with `schemaVersion: 1`, then `docker version` from inside the container) and `prune-stacks` (a compose stack started from a `/home/orca` directory that no longer exists is gone by the time the server is ready), then push the multi-arch image as `<branch>` and `sha-<sha>`. The `main` tag moves; a host pinned to a build uses the sha tag as `image_tag`.
+`.github/workflows/ci.yml`, on every push: lint (hadolint, shellcheck, `terraform fmt` and `validate`), build amd64, smoke-test the ready contract (an `orca_server_ready` line with `schemaVersion: 1`, then `docker version`, `node`, `npx`, `uv` and `uvx` from inside the container) and `prune-stacks` (a compose stack started from a `/home/orca` directory that no longer exists is gone by the time the server is ready), then push the multi-arch image as `<branch>` and `sha-<sha>`. The `main` tag moves; a host pinned to a build uses the sha tag as `image_tag`.
 
 ## The stack
 
