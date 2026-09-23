@@ -1,5 +1,6 @@
 # The VM: Flatcar Container Linux, configured by Ignition on first boot, throwaway.
-# Rebuild: terraform apply -replace=google_compute_instance.vm — the data disk and the pairing survive.
+# Rebuild: terraform apply -replace=google_compute_instance.vm — the data disk (home, Tailscale identity, Docker's
+# images and volumes) and the pairing survive; only Flatcar is new.
 data "google_compute_image" "flatcar" {
   family  = "flatcar-stable"
   project = "kinvolk-public"

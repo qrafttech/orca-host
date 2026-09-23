@@ -1,4 +1,4 @@
-# The data disk outlives the VM: /home/orca and the Tailscale identity. Daily snapshots, seven kept.
+# The data disk outlives the VM: /home/orca, the Tailscale identity, Docker's data root. Daily snapshots, seven kept.
 resource "google_compute_disk" "data" {
   name = "${var.name}-data"
   type = "pd-balanced"
