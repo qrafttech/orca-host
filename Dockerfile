@@ -76,12 +76,15 @@ COPY --from=claude /opt/claude /opt/claude
 COPY --from=gh /usr/local/bin/gh /usr/local/bin/gh
 COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
 COPY --from=docker-cli /usr/local/libexec/docker/cli-plugins/docker-compose /usr/local/libexec/docker/cli-plugins/docker-compose
-COPY --from=node /usr/local/bin/node /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/
+COPY --from=node /usr/local/bin/node /usr/local/bin/node
 COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules
 COPY --from=uv /uv /uvx /usr/local/bin/
 
+# npm and npx are symlinks into npm's tree in the node image; COPY would dereference them, so they are made here.
 RUN useradd --create-home --shell /bin/bash orca \
  && ln -s "/opt/claude/${CLAUDE_CODE_VERSION}/claude" /usr/local/bin/claude \
+ && ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+ && ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
  && printf '#!/bin/sh\nexec /opt/orca/AppRun "$@"\n' > /usr/local/bin/orca && chmod 755 /usr/local/bin/orca
 
 # Claude Code never updates itself here (the image is the version). git authenticates to GitHub through gh,
