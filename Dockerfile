@@ -82,5 +82,6 @@ ENV DISABLE_AUTOUPDATER=1 \
     GIT_CONFIG_KEY_0=credential.https://github.com.helper \
     GIT_CONFIG_VALUE_0="!gh auth git-credential"
 
+COPY prune-stacks.sh /usr/local/bin/prune-stacks
 COPY entrypoint.sh /usr/local/bin/entrypoint
 ENTRYPOINT ["/usr/local/bin/entrypoint"]

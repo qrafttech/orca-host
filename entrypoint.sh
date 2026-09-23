@@ -81,6 +81,10 @@ if [ -n "${CLAUDE_SETTINGS_REPO:-}" ]; then
   fi
 fi
 
+# The stacks of deleted worktrees, torn down within 5 minutes, volumes included: see prune-stacks. Orca does not
+# tell the host about a delete, so a loop, for as long as the container runs.
+(while :; do prune-stacks || true; sleep 300; done) &
+
 if [ -z "${PAIRING_ADDRESS:-}" ]; then
   echo "waiting for tailscale0"
   until PAIRING_ADDRESS=$(ip -4 -o addr show tailscale0 2>/dev/null | awk '{print $4}' | cut -d/ -f1) \
