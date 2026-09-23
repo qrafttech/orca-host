@@ -34,9 +34,15 @@ On the host it lives in Secret Manager: `make secret` uploads it from 1Password,
 
 Needed on the laptop: `docker`, `terraform`, `gcloud`, `op` (1Password CLI), `jq`, `ssh`, `qrencode`, the Orca desktop CLI.
 
-1. **Once per tailnet**: a tag `orca-host` with owner `autogroup:admin`, in the Tailscale admin console → Access controls → Tags ([screenshot](docs/tailscale-tag.png)). Tagged nodes never expire.
+1. **Once per tailnet**: a tag `orca-host` with owner `autogroup:admin`, in the Tailscale admin console → Access controls → Tags. Tagged nodes never expire.
+
+   <img src="docs/tailscale-tag.png" width="49%" alt="Create tag">
+
 2. **Once per GCP project**: `gcloud auth application-default login` (Terraform's login, separate from `gcloud auth login`), then `make bootstrap` for the state bucket.
-3. **The two Secure Notes**: `orca-host-tfvars` is `terraform/terraform.tfvars.example` filled in; `orca-host` is the env file above. Screenshots: [auth key](docs/tailscale-auth-key.png), [token scopes](docs/github-token.png). Fine-grained GitHub tokens do not work; the organisation must allow classic ones.
+3. **The two Secure Notes**: `orca-host-tfvars` is `terraform/terraform.tfvars.example` filled in; `orca-host` is the env file above. Fine-grained GitHub tokens do not work; the organisation must allow classic ones.
+
+   <img src="docs/tailscale-auth-key.png" width="49%" alt="Generate auth key"> <img src="docs/github-token.png" width="49%" alt="Token scopes">
+
 4. **The host**:
 
    ```bash
@@ -50,7 +56,9 @@ Needed on the laptop: `docker`, `terraform`, `gcloud`, `op` (1Password CLI), `jq
 
 ## Projects
 
-Add one from the app: Set project location → Clone from URL, the https URL, destination `/home/orca`. Git authenticates through `gh` with `GH_TOKEN`: no login, no key.
+Add one from the app: Add a project → Clone from URL, the https URL, parent folder `/home/orca` (the repository name is appended). Git authenticates through `gh` with `GH_TOKEN`: no login, no key.
+
+<img src="docs/orca-add-project.png" width="49%" alt="Add a project"> <img src="docs/orca-clone-from-url.png" width="49%" alt="Clone from URL">
 
 Everything a project needs is in its repository and runs from its worktree setup hook: `docker compose` on the VM's Docker, `.env` files, base images. What it starts is reachable at `http://<tailnet IP>:<port>`. Claude Code in a worktree works as on a laptop: the project's own `.claude/` and `CLAUDE.md` apply on top of your settings, hooks run in the container (`ruby`, `python3`, `node` are there), and workspace trust is asked once per project.
 
