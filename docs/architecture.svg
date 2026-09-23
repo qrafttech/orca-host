@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 580" width="960" height="580" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" role="img" aria-label="Architecture of an orca-host: the Orca clients reach the VM over the tailnet; in the VM, a tailscale container carries the address and an orca-host container runs orca serve; project stacks are sibling containers on the VM's Docker; a data disk holds the home, the Tailscale identity and the env file, fetched from Secret Manager at every boot.">
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10z" fill="#E4EAEE"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="960" height="580" rx="12" fill="#0F171D"/>
+
+  <!-- clients -->
+  <rect x="20" y="140" width="180" height="64" rx="6" fill="#121920" stroke="#263139" stroke-width="1.2"/>
+  <text x="110" y="167" text-anchor="middle" fill="#E4EAEE" font-size="13" font-weight="600">Orca desktop</text>
+  <text x="110" y="187" text-anchor="middle" fill="#98A5AE" font-size="11">laptop</text>
+
+  <rect x="20" y="240" width="180" height="64" rx="6" fill="#121920" stroke="#263139" stroke-width="1.2"/>
+  <text x="110" y="267" text-anchor="middle" fill="#E4EAEE" font-size="13" font-weight="600">Orca mobile</text>
+  <text x="110" y="287" text-anchor="middle" fill="#98A5AE" font-size="11">phone</text>
+
+  <!-- bus to the VM -->
+  <path d="M200 172H250V272H200" fill="none" stroke="#E4EAEE" stroke-width="1.3"/>
+  <path d="M250 222H328" fill="none" stroke="#E4EAEE" stroke-width="1.3" marker-end="url(#ar)"/>
+  <text x="289" y="212" text-anchor="middle" fill="#E4EAEE" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5">tailnet</text>
+
+  <!-- VM -->
+  <rect x="300" y="60" width="440" height="490" rx="10" fill="none" stroke="#98A5AE" stroke-width="1.2" stroke-dasharray="5 4"/>
+  <text x="322" y="88" fill="#E4EAEE" font-size="13" font-weight="600">VM · Flatcar Container Linux · GCP</text>
+  <text x="322" y="106" fill="#98A5AE" font-size="11">own VPC · no port open from the internet · SSH over the tailnet</text>
+
+  <!-- tailscale -->
+  <rect x="330" y="180" width="150" height="84" rx="6" fill="#121920" stroke="#263139" stroke-width="1.2"/>
+  <text x="405" y="207" text-anchor="middle" fill="#E4EAEE" font-size="13" font-weight="600">tailscale</text>
+  <text x="405" y="227" text-anchor="middle" fill="#98A5AE" font-size="11">host network</text>
+  <text x="405" y="246" text-anchor="middle" fill="#98A5AE" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5">/dev/net/tun</text>
+
+  <!-- orca-host -->
+  <rect x="560" y="180" width="150" height="84" rx="6" fill="#5CC4D0"/>
+  <text x="635" y="207" text-anchor="middle" fill="#06282D" font-size="13" font-weight="600">orca-host</text>
+  <text x="635" y="227" text-anchor="middle" fill="#06282D" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5">orca serve --json</text>
+  <text x="635" y="246" text-anchor="middle" fill="#06282D" font-size="11" opacity="0.8">claude · gh · git · docker</text>
+
+  <path d="M480 222H558" fill="none" stroke="#E4EAEE" stroke-width="1.3" marker-end="url(#ar)"/>
+  <text x="520" y="210" text-anchor="middle" fill="#E4EAEE" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5">tailnet IP</text>
+  <text x="520" y="243" text-anchor="middle" fill="#E4EAEE" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5">:6768</text>
+
+  <!-- project stacks -->
+  <path d="M670 264V315" fill="none" stroke="#E4EAEE" stroke-width="1.3" marker-end="url(#ar)"/>
+  <text x="662" y="296" text-anchor="end" fill="#98A5AE" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5">docker.sock</text>
+  <rect x="540" y="317" width="190" height="76" rx="6" fill="#12333A" stroke="#5CC4D0" stroke-width="1"/>
+  <text x="635" y="342" text-anchor="middle" fill="#E4EAEE" font-size="13" font-weight="600">project stacks</text>
+  <text x="635" y="360" text-anchor="middle" fill="#98A5AE" font-size="11">sibling containers, on the VM's Docker</text>
+  <text x="635" y="379" text-anchor="middle" fill="#98A5AE" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5">http://&lt;tailnet IP&gt;:&lt;port&gt;</text>
+
+  <!-- to the data disk -->
+  <path d="M405 264V436" fill="none" stroke="#E4EAEE" stroke-width="1.3" marker-end="url(#ar)"/>
+  <path d="M590 264V286H470V436" fill="none" stroke="#E4EAEE" stroke-width="1.3" marker-end="url(#ar)"/>
+  <text x="397" y="405" text-anchor="end" fill="#E4EAEE" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5">tailscale/</text>
+  <text x="397" y="420" text-anchor="end" fill="#98A5AE" font-size="11">node identity</text>
+  <text x="478" y="405" fill="#E4EAEE" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5">home/ = /home/orca</text>
+  <text x="478" y="420" fill="#98A5AE" font-size="11">checkouts · ~/.claude · Orca state</text>
+
+  <!-- data disk -->
+  <path d="M330 448a190 8 0 0 1 380 0v64a190 8 0 0 1 -380 0z" fill="#121920" stroke="#263139" stroke-width="1.2"/>
+  <ellipse cx="520" cy="448" rx="190" ry="8" fill="#121920" stroke="#263139" stroke-width="1.2"/>
+  <text x="520" y="480" text-anchor="middle" fill="#E4EAEE" font-size="13" font-weight="600">data disk · /var/lib/orca</text>
+  <text x="520" y="499" text-anchor="middle" fill="#98A5AE" font-size="11">survives a VM rebuild · daily snapshot, 7 kept</text>
+
+  <!-- Secret Manager -->
+  <rect x="790" y="447" width="150" height="60" rx="6" fill="#121920" stroke="#263139" stroke-width="1.2"/>
+  <text x="865" y="472" text-anchor="middle" fill="#E4EAEE" font-size="13" font-weight="600">Secret Manager</text>
+  <text x="865" y="490" text-anchor="middle" fill="#98A5AE" font-size="11">the env file</text>
+  <path d="M790 477H714" fill="none" stroke="#E4EAEE" stroke-width="1.3" marker-end="url(#ar)"/>
+  <text x="752" y="468" text-anchor="middle" fill="#98A5AE" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5">at every boot</text>
+  <text x="865" y="528" text-anchor="middle" fill="#98A5AE" font-size="11">filled by make secret,</text>
+  <text x="865" y="544" text-anchor="middle" fill="#98A5AE" font-size="11">from 1Password</text>
+</svg>

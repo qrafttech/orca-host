@@ -4,6 +4,8 @@ A headless [Orca](https://github.com/stablyai/orca) server on a GCP VM, used fro
 
 Three layers, each usable without the one above: an image (`Dockerfile`, published as `ghcr.io/qrafttech/orca-host`), a stack (`compose.yaml`, driven by one env file), a host (`terraform/`, a VM on GCP that runs the stack). How it works and why: [`.claude/knowledge/`](.claude/knowledge/).
 
+<img src="docs/architecture.svg" alt="The Orca clients reach the VM over the tailnet; in the VM, a tailscale container carries the address and an orca-host container runs orca serve; project stacks are sibling containers on the VM's Docker; a data disk holds the home, the Tailscale identity and the env file, fetched from Secret Manager at every boot">
+
 ## What is configured where
 
 | What | Where | Holds |
@@ -88,7 +90,7 @@ make shell     # a shell in the container, as `orca`, the same paths an Orca ter
 make ssh       # a shell on the VM, as `core`
 ```
 
-A change to `compose.yaml` or `terraform/ignition.yaml.tftpl` needs a rebuild: `terraform -chdir=terraform apply -replace=google_compute_instance.vm`. The data disk (checkouts, Tailscale identity, pairing) survives it.
+A change to `compose.yaml` or `terraform/ignition.yaml.tftpl` needs a rebuild: `terraform -chdir=terraform apply -replace=google_compute_instance.vm`. The data disk (checkouts, Tailscale identity, pairing) survives it; the Docker volumes of project stacks do not, their setup hook recreates them. The boot disk fills with images over time: `docker system prune` from `make shell`.
 
 ## Develop
 
