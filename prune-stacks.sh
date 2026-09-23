@@ -14,8 +14,8 @@ docker ps -a --format '{{.Label "com.docker.compose.project"}} {{.Label "com.doc
       case "$dir" in /home/orca/*) ;; *) continue ;; esac
       [ ! -d "$dir" ] || continue
       if out=$(docker compose -p "$project" down -v 2>&1); then
-        echo "reap-stacks: $project torn down, $dir is gone"
+        echo "prune-stacks: $project torn down, $dir is gone"
       else
-        echo "reap-stacks: $project: down -v failed, $dir is gone: $out"
+        echo "prune-stacks: $project: down -v failed, $dir is gone: $out"
       fi
     done
