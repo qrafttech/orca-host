@@ -60,6 +60,7 @@ jobs:
             sleep 5
             if docker logs smoke 2>/dev/null | jq -Rr 'fromjson? | select(.type=="orca_server_ready" and .schemaVersion==1) | .type' | grep -q .; then
               echo "ready after $((i*5))s"; docker exec -u orca smoke docker version --format 'docker {{.Server.Version}} from the container'
+              docker exec -u orca smoke sh -c 'node -v && npm -v && npx --version && uv --version && uvx --version'
               docker logs smoke 2>&1 | grep '^prune-stacks: ghost torn down'
               left=$(docker ps -a --filter label=com.docker.compose.project=ghost --format '{{.Names}}'; docker volume ls --filter label=com.docker.compose.project=ghost --format '{{.Name}}')
               [ -z "$left" ] || { echo "ghost stack left behind: $left"; exit 1; }

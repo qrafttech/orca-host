@@ -6,6 +6,8 @@ ARG ORCA_VERSION=1.4.205
 ARG CLAUDE_CODE_VERSION=2.1.276
 ARG GH_VERSION=2.101.0
 ARG DOCKER_VERSION=29.8.1
+ARG NODE_VERSION=24.21.0
+ARG UV_VERSION=0.12.18
 
 # --- Orca: the official AppImage, extracted once (no FUSE in a container) ---------------------------------
 # An AppImage is an ELF runtime with a squashfs appended: unsquashfs at the runtime's size extracts it without
@@ -48,6 +50,10 @@ RUN curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_$
 # --- docker CLI + compose plugin, static binaries from the official image ------------------------------------
 FROM docker:${DOCKER_VERSION}-cli AS docker-cli
 
+# --- node LTS with npm and npx, uv with uvx: what an `npx …` or `uvx …` MCP server runs on, and `orca skills` ----
+FROM node:${NODE_VERSION}-bookworm-slim AS node
+FROM ghcr.io/astral-sh/uv:${UV_VERSION} AS uv
+
 # --- the image -------------------------------------------------------------------------------------------------
 FROM debian:12-slim
 ARG CLAUDE_CODE_VERSION
@@ -55,9 +61,10 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Electron runtime libraries (Orca's headless-linux-server doc, Debian 12 names), Xvfb (Orca starts it itself),
 # the tools a worktree setup hook may call, and the interpreters a project's Claude Code hooks may need: hooks run
 # here, next to claude, not in the project's containers. The app's own runtime, at its own version, is in those.
+# node comes from its own stage below: Debian's package has no npm.
 RUN apt-get update && apt-get install -y --no-install-recommends \
       bash ca-certificates curl git jq make lsof procps iproute2 util-linux xvfb xauth zlib1g \
-      ruby python3 nodejs \
+      ruby python3 \
       libgtk-3-0 libnss3 libatk1.0-0 libatk-bridge2.0-0 libgbm1 libasound2 \
       libxtst6 libcups2 libdrm2 libxkbcommon0 libpango-1.0-0 libcairo2 libatspi2.0-0 \
       libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libxrender1 libx11-xcb1 \
@@ -69,6 +76,9 @@ COPY --from=claude /opt/claude /opt/claude
 COPY --from=gh /usr/local/bin/gh /usr/local/bin/gh
 COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
 COPY --from=docker-cli /usr/local/libexec/docker/cli-plugins/docker-compose /usr/local/libexec/docker/cli-plugins/docker-compose
+COPY --from=node /usr/local/bin/node /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/
+COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules
+COPY --from=uv /uv /uvx /usr/local/bin/
 
 RUN useradd --create-home --shell /bin/bash orca \
  && ln -s "/opt/claude/${CLAUDE_CODE_VERSION}/claude" /usr/local/bin/claude \
