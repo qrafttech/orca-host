@@ -7,11 +7,12 @@
 #   TS_AUTHKEY               Tailscale auth key, tagged, preauthorized, single-use. Only read on the first start;
 #                            the node identity then lives in <ORCA_DATA>/tailscale.
 #   CLAUDE_CODE_OAUTH_TOKEN  from `claude setup-token`
-#   GH_TOKEN                 classic GitHub token, `repo` scope — the only GitHub credential on the host
+#   GH_TOKEN                 classic GitHub token, `repo` + `read:org` — the only GitHub credential on the host
 #   GIT_AUTHOR_NAME / GIT_AUTHOR_EMAIL   git identity, also used as committer
 #   CLAUDE_PERMISSION_MODE   optional: default | acceptEdits | auto | plan, the permission mode of Claude panes
 #   CLAUDE_SETTINGS_REPO     optional: <owner>/<repo> holding your Claude settings; CLAUDE_SETTINGS_FILE the path
-#                            of settings.json in it. `permissions`, a root CLAUDE.md and .claude/skills are taken.
+#                            of settings.json in it. `permissions`, a root CLAUDE.md, .claude/skills, config/mcp.json
+#                            and config/bin.json are taken.
 #   ORCA_ENV_FILE            the env file itself, for the orca-host container (set by the VM's unit)
 #   TS_HOSTNAME              the host's name on the tailnet (set by the VM's unit)
 #   ORCA_DATA                where state lives on the host: home/ and tailscale/ (set by the VM's unit)
