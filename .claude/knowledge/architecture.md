@@ -7,6 +7,7 @@ laptop / phone ──tailnet──▶ VM (Flatcar Container Linux, Ignition)
                              ├─ data disk  /var/lib/orca — survives a VM rebuild, snapshotted daily
                              │    home/       /home/orca: checkouts, ~/.claude, Orca state
                              │    tailscale/  node identity: same tailnet IP after a rebuild
+                             │    docker/     Docker's data root: images, build cache, the volumes of project stacks
                              │    env         the env file, fetched from Secret Manager at every boot
                              └─ compose.yaml
                                   ├─ tailscale   host network, /dev/net/tun
@@ -68,6 +69,7 @@ The VM is Flatcar Container Linux: immutable, Docker built in, nothing installed
 - the data disk: ext4, labelled `orca`, mounted at `/var/lib/orca`, never wiped (`wipe_filesystem: false`)
 - `/home/orca → /var/lib/orca/home`
 - `/opt/orca/compose.yaml`, `/opt/orca/fetch-env`, `/opt/orca/up` (`/etc` is noexec on Flatcar)
+- `/etc/docker/daemon.json`: Docker's data root at `/var/lib/orca/docker`, and a drop-in so `docker.service` starts after the data disk is mounted
 - `orca-env.service`: fetches the secret with the VM's own service account, retrying until a version exists (`make secret` may come after `make apply`)
 - `orca.service`: `docker compose up -d --pull always --remove-orphans`, run from the `docker:cli` image, since Flatcar ships no compose
 
@@ -77,10 +79,10 @@ The VM is Flatcar Container Linux: immutable, Docker built in, nothing installed
 
 | Disk | Size | Holds | On a rebuild |
 |---|---|---|---|
-| boot | `boot_disk_gb`, 20 GB by default | Flatcar; `/var/lib/docker`: the images (orca-host, tailscale, the projects'), the containers, the build cache, and the named volumes of project stacks (a worktree's `postgres_data`) | replaced with the VM |
-| data | `data_disk_gb`, 50 GB by default | `/var/lib/orca`: `home/` (checkouts, worktrees, `~/.claude`, `~/bin`, Orca state), `tailscale/` (node identity), `env` | kept |
+| boot | `boot_disk_gb`, 20 GB by default | Flatcar, nothing else | replaced with the VM |
+| data | `data_disk_gb`, 50 GB by default | `/var/lib/orca`: `home/` (checkouts, worktrees, `~/.claude`, `~/bin`, Orca state), `tailscale/` (node identity), `docker/` (Docker's data root: the images, the containers, the build cache, the named volumes of project stacks), `env` | kept |
 
-What must survive lives under `/var/lib/orca`. A database in a Docker volume is a worktree database: throwaway, recreated by the setup hook. The data disk is `pd-balanced`, `prevent_destroy`, daily snapshots at 03:00, seven kept, kept if the disk is deleted; it grows live, never shrinks. Images accumulate on the boot disk: `docker system prune` from `make shell` (volumes are kept unless `--volumes`), or a bigger `boot_disk_gb`.
+Everything under `/var/lib/orca` survives a rebuild, Docker's root included: nothing is pulled again, a worktree's `postgres_data` is still there. Docker's root is there by `daemon.json`, not by Docker's default (`/var/lib/docker`, on the boot disk): once Flatcar has its share, the boot disk is too small for one project's images, and what it held went with the VM. A database in a Docker volume is a worktree database all the same: its setup hook creates it, its archive script removes it (`docker compose down -v`), nothing migrates it. The data disk is `pd-balanced`, `prevent_destroy`, daily snapshots at 03:00 (Docker's root included), seven kept, kept if the disk is deleted; it grows live, never shrinks. Docker is what fills it: `docker system df` says what takes it, `docker system prune` from `make shell` gives back what no container uses (volumes only with `--volumes`).
 
 **Sizing.** `machine_type` defaults to `e2-standard-4`, 16 GB of RAM: about 4 GB per compose stack, so three stacks and Orca.
 
@@ -101,7 +103,7 @@ Host <name>
 | a new secret version, a new variable in it, a new image under the same tag | `make restart` |
 | `compose.yaml`, `terraform/ignition.yaml.tftpl` | `terraform -chdir=terraform apply -replace=google_compute_instance.vm` |
 
-Ignition runs at first boot only, and `compose.yaml` is baked into it. A rebuild keeps the data disk (checkouts, Tailscale identity, pairing); the images are pulled again, and the Docker volumes of project stacks go with the boot disk.
+Ignition runs at first boot only, and `compose.yaml` is baked into it. A rebuild keeps the data disk: checkouts, Tailscale identity, pairing, Docker's images and the volumes of project stacks. Only Flatcar is new.
 
 ## Pairing
 

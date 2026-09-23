@@ -21,13 +21,13 @@ variable "machine_type" {
 }
 
 variable "data_disk_gb" {
-  description = "The data disk: /home/orca (checkouts, worktrees, ~/.claude) and the Tailscale identity. Grows live, never shrinks."
+  description = "The data disk: /home/orca (checkouts, worktrees, ~/.claude), the Tailscale identity, Docker's data root (images, build cache, the volumes of project stacks). Grows live, never shrinks."
   type        = number
   default     = 50
 }
 
 variable "boot_disk_gb" {
-  description = "The boot disk: the OS, the docker images and their volumes. Replaced with the VM."
+  description = "The boot disk: Flatcar, nothing else. Replaced with the VM."
   type        = number
   default     = 20
 }

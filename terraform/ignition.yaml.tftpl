@@ -1,6 +1,6 @@
 # Butane config for Flatcar, rendered by Terraform, applied by Ignition on the VM's first boot.
 # Everything the host is: an SSH key, the data disk, three files under /opt/orca (/etc is noexec on Flatcar),
-# two units. Nothing else is ever written to it.
+# Docker's data root on the data disk, two units. Nothing else is ever written to it.
 variant: flatcar
 version: 1.0.0
 
@@ -68,9 +68,23 @@ storage:
             -e TS_HOSTNAME -e ORCA_DATA -e ORCA_IMAGE_TAG -e ORCA_ENV_FILE \
             -w /opt/orca docker:29.8.1-cli \
             docker compose --env-file /var/lib/orca/env up -d --pull always --remove-orphans
+    # Docker's data root on the data disk: images, build cache and the volumes of project stacks survive a rebuild,
+    # and the boot disk is Flatcar only.
+    - path: /etc/docker/daemon.json
+      mode: 0644
+      contents:
+        inline: |
+          {"data-root": "/var/lib/orca/docker"}
 
 systemd:
   units:
+    # Docker's data root is on the data disk: start after it is mounted.
+    - name: docker.service
+      dropins:
+        - name: 10-data-root.conf
+          contents: |
+            [Unit]
+            RequiresMountsFor=/var/lib/orca
     - name: orca-env.service
       enabled: true
       contents: |
