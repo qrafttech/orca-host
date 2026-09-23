@@ -16,6 +16,16 @@ laptop / phone ──tailnet──▶ VM (Flatcar Container Linux, Ignition)
                                        /home/orca is the same path inside and outside
 ```
 
+## Where things run
+
+| | Runs | Installed |
+|---|---|---|
+| The VM | Docker, and two containers: `tailscale` and `orca-host` | nothing else |
+| The `orca-host` container | `orca serve`, every Claude pane, every Orca terminal, a project's Claude Code hooks | `claude`, `gh`, `git`, the Docker CLI, `ruby`, `python3`, `node` |
+| A project's containers | the app, its database, its cache: a worktree's stack | the app's runtime, at its version, from the project's compose |
+
+Beside, not inside: the `orca-host` container has the VM's Docker socket, so a `docker compose up` from an Orca terminal creates the project's containers on the VM's Docker, as siblings of `orca-host`. Same path everywhere: on the VM, `/home/orca` is a symlink to `/var/lib/orca/home`, which the container mounts at `/home/orca`, so a project's `./:/app` bind mount names the same files on both sides.
+
 ## The image
 
 - `orca serve` from the official AppImage, extracted with `unsquashfs` at build time. No FUSE in a container, and the arm64 build runs under QEMU, where the kernel's binfmt rule refuses to execute an AppImage.
@@ -63,7 +73,16 @@ The VM is Flatcar Container Linux: immutable, Docker built in, nothing installed
 
 **Secrets.** Terraform creates the Secret Manager secret empty; versions are added by `make secret`, so no secret ever passes through Terraform or its state. The VM's service account reads that one secret and nothing else. 1Password is never on the host.
 
-**Data disk.** `pd-balanced`, `prevent_destroy`, daily snapshots at 03:00, seven kept, kept if the disk is deleted. Grows live, never shrinks. The boot disk holds the OS and the Docker images and is replaced with the VM.
+**Disks.** Two, with different fates:
+
+| Disk | Size | Holds | On a rebuild |
+|---|---|---|---|
+| boot | `boot_disk_gb`, 20 GB by default | Flatcar; `/var/lib/docker`: the images (orca-host, tailscale, the projects'), the containers, the build cache, and the named volumes of project stacks (a worktree's `postgres_data`) | replaced with the VM |
+| data | `data_disk_gb`, 50 GB by default | `/var/lib/orca`: `home/` (checkouts, worktrees, `~/.claude`, `~/bin`, Orca state), `tailscale/` (node identity), `env` | kept |
+
+What must survive lives under `/var/lib/orca`. A database in a Docker volume is a worktree database: throwaway, recreated by the setup hook. The data disk is `pd-balanced`, `prevent_destroy`, daily snapshots at 03:00, seven kept, kept if the disk is deleted; it grows live, never shrinks. Images accumulate on the boot disk: `docker system prune` from `make shell` (volumes are kept unless `--volumes`), or a bigger `boot_disk_gb`.
+
+**Sizing.** `machine_type` defaults to `e2-standard-4`, 16 GB of RAM: about 4 GB per compose stack, so three stacks and Orca.
 
 **Network.** Own VPC, nothing reaches the VM from the internet; the public IP is for egress only. SSH answers on the tailnet address: `ssh core@<name>`. One firewall rule, the break-glass for when the stack is down: SSH from Google's IAP range only, `gcloud compute ssh <name> --tunnel-through-iap`, which needs an IAM identity of the project. The serial console (`gcloud compute connect-to-serial-port`) shows the boot log, including both units' output.
 
@@ -82,7 +101,7 @@ Host <name>
 | a new secret version, a new variable in it, a new image under the same tag | `make restart` |
 | `compose.yaml`, `terraform/ignition.yaml.tftpl` | `terraform -chdir=terraform apply -replace=google_compute_instance.vm` |
 
-Ignition runs at first boot only, and `compose.yaml` is baked into it. A rebuild keeps the data disk (checkouts, Tailscale identity, pairing) and pulls the images again.
+Ignition runs at first boot only, and `compose.yaml` is baked into it. A rebuild keeps the data disk (checkouts, Tailscale identity, pairing); the images are pulled again, and the Docker volumes of project stacks go with the boot disk.
 
 ## Pairing
 
