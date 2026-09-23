@@ -54,7 +54,7 @@ jobs:
           # a compose stack started from a directory under /home/orca that no longer exists: gone once the server is up
           sudo install -d -o "$USER" /home/orca/ghost
           printf 'services:\n  s: {image: alpine:3.20, command: sleep infinity, stop_grace_period: 1s, volumes: [data:/data]}\nvolumes:\n  data:\n' > /home/orca/ghost/compose.yaml
-          docker compose -f /home/orca/ghost/compose.yaml up -d && rm -rf /home/orca/ghost
+          docker compose -f /home/orca/ghost/compose.yaml up -d && sudo rm -rf /home/orca/ghost
           docker run -d --name smoke -e PAIRING_ADDRESS=127.0.0.1 -v /var/run/docker.sock:/var/run/docker.sock ${{ env.IMAGE }}:smoke
           for i in $(seq 1 24); do
             sleep 5
