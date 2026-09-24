@@ -35,3 +35,4 @@ A VM that runs `orca serve` headless, one host per person, all of that person's 
 | mobile pairing | `make pair`, QR on the laptop | from the desktop client |
 | first clone of a project | the app, Clone from URL | — |
 | Claude Code workspace trust | first Claude pane of a project, once, covers its worktrees — as on a laptop | — |
+| local `main` up to date | `git pull --ff-only` in each clone; Orca's own setting is written on the client and never reaches the host | a loop in the entrypoint, like `prune-stacks` |
