@@ -2,7 +2,6 @@
 # laptop's own Tailscale is the tailnet node, Orca advertises the laptop's tailnet IP. Its bind mounts refuse
 # unix sockets, which Orca needs in its home: the home is a named volume here. Same-path bind mounts do not hold.
 #   ORCA_IMAGE=orca-host:dev docker compose -f compose.yaml -f compose.laptop.yaml --env-file env up -d
-# The image is ORCA_IMAGE, as on a host: `make up` points it at the locally built orca-host:dev.
 services:
   tailscale:
     profiles: [vm]
