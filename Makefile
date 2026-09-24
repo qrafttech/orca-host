@@ -2,6 +2,8 @@
 # The two per-person files are gitignored and come from 1Password when absent: terraform/terraform.tfvars is the
 # body of a Secure Note named orca-host-tfvars, the env file of one named orca-host, both in the vault OP_VAULT
 # (override: `make secret OP_VAULT="My Vault"`, or export it). Edit the local copies freely; `rm` one to refetch it.
+# A line of the env note may point at another item, `FOO_TOKEN={{ op://Vault/Item/field }}`: `op inject` resolves
+# it on the way out, so a token that other tools use too lives once, in its own item, not copied into the note.
 TFVARS  := terraform/terraform.tfvars
 # `=`, not `:=`: expanded in recipes, after the $(TFVARS) rule has fetched the file. At parse time it may not exist.
 NAME     = $(shell sed -n 's/^name *= *"\(.*\)".*/\1/p' $(TFVARS))
@@ -13,6 +15,7 @@ SECRET   = orca-host-$(NAME)-env
 OP_VAULT ?= Private
 OP        := op://$(OP_VAULT)/orca-host/notesPlain
 OP_TFVARS := op://$(OP_VAULT)/orca-host-tfvars/notesPlain
+READ_ENV  := op read "$(OP)" | op inject
 TF      := terraform -chdir=terraform
 # Every rebuild is a new host key, and the tailnet already authenticates the peer: no host-key check for this host.
 SSH     := ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR
@@ -24,8 +27,13 @@ ORCA_IMAGE ?= orca-host:dev
 .DELETE_ON_ERROR:
 
 ## the per-person files, from 1Password when absent
+# Both recipes pipe, and `sh` has no pipefail: a failed `op read` would exit 0 through `op inject` and write an
+# empty file, or upload an empty secret version. bash for these two, so the pipeline fails with its first command.
+env secret: SHELL := /bin/bash
+env secret: .SHELLFLAGS := -o pipefail -c
+
 env:                ## the env file, into ./env
-	op read "$(OP)" > $@ && chmod 600 $@
+	$(READ_ENV) > $@ && chmod 600 $@
 
 $(TFVARS):          ## the host's name, project, zone, SSH key, into terraform/terraform.tfvars
 	op read "$(OP_TFVARS)" > $@
@@ -47,7 +55,7 @@ PAIRING_URL = $(SSH) core@$(NAME) docker logs orca-host 2>/dev/null \
 	  | jq -Rr 'fromjson? | select(.type=="orca_server_ready") | .pairing.url' | tail -1
 
 secret:             ## the env file, from 1Password, as a new version of the host's secret
-	op read "$(OP)" | gcloud secrets versions add $(SECRET) --data-file=- --project $(PROJECT)
+	$(READ_ENV) | gcloud secrets versions add $(SECRET) --data-file=- --project $(PROJECT)
 
 bootstrap:          ## once per project: the state bucket
 	gcloud storage buckets describe gs://$(BUCKET) --project $(PROJECT) >/dev/null 2>&1 || \

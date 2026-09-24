@@ -30,6 +30,7 @@ A VM that runs `orca serve` headless, one host per person, all of that person's 
 | host name, project, zone, SSH key | laptop, into the Secure Note `orca-host-tfvars` | — |
 | Tailscale auth key | admin console, into the Secure Note | Tailscale API from `make secret` |
 | Claude token, GitHub token, git identity | laptop, into the Secure Note | — |
+| the tokens your MCP servers and your own tools read | laptop, into the Secure Note, as `{{ op:// }}` references to their own items | — |
 | state bucket | `make bootstrap` | — |
 | env file into Secret Manager | `make secret` | — |
 | pairing | `make pair` | from the Orca client |
