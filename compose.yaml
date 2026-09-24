@@ -19,6 +19,8 @@
 #   ORCA_IMAGE               the image to run, a full reference: the published base, or your own image built
 #                            FROM it to add your tools (set by the VM's unit)
 #   PAIRING_ADDRESS          only on a laptop, see compose.laptop.yaml
+#   anything else            reaches the orca-host container as is: the `${VAR}` of your config/mcp.json, what
+#                            your own tools read
 
 services:
   tailscale:

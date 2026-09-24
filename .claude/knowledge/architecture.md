@@ -93,7 +93,7 @@ The VM is Flatcar Container Linux: immutable, Docker built in, nothing installed
 - `orca-env.service`: fetches the secret with the VM's own service account, retrying until a version exists (`make secret` may come after `make apply`)
 - `orca.service`: `docker compose up -d --pull always --remove-orphans`, run from the `docker:cli` image, since Flatcar ships no compose. Then `docker image prune -f`, once the stack is up: `--pull always` on a moving tag leaves the image it replaced untagged, and a full orca-host image is not small next to every project's images on the same disk. Dangling only, so nothing tagged and nothing a container uses is touched, and a failed prune does not fail the unit.
 
-**Secrets.** Terraform creates the Secret Manager secret empty; versions are added by `make secret`, so no secret ever passes through Terraform or its state. The VM's service account reads that one secret and nothing else. 1Password is never on the host.
+**Secrets.** Terraform creates the Secret Manager secret empty; versions are added by `make secret`, so no secret ever passes through Terraform or its state. The VM's service account reads that one secret and nothing else. 1Password is never on the host. The env note may reference other 1Password items (`{{ op://Vault/Item/field }}`): `op inject` resolves them inside `make secret`, on the laptop, so the host still sees one flat file and a token is stored once.
 
 **Disks.** Two, with different fates:
 

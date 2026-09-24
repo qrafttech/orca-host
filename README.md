@@ -16,7 +16,7 @@ Three layers, each usable without the one above: an image (`Dockerfile`, publish
 | Your tools | an image of yours, built `FROM` this one, optional | binaries, MCP servers, anything installed |
 | A project | its own repository | `orca.yaml`, worktree scripts, `.env` files, compose, `.claude/` |
 
-Nothing in this repository is per person or per project. The first two files are gitignored and come from 1Password: `terraform.tfvars` is the body of a Secure Note named `orca-host-tfvars`, the env file of one named `orca-host`, both in the vault `OP_VAULT` (`Private` by default). `make` fetches a file when it is missing; edit the local copy freely, `rm` it to refetch.
+Nothing in this repository is per person or per project. The first two files are gitignored and come from 1Password: `terraform.tfvars` is the body of a Secure Note named `orca-host-tfvars`, the env file of one named `orca-host`, both in the vault `OP_VAULT` (`Private` by default). `make` fetches a file when it is missing; edit the local copy freely, `rm` it to refetch. A line of the env note may point at another item, `FOO_TOKEN={{ op://Vault/Item/field }}`: `op inject` resolves it on the way out, so a token lives once, in its own item.
 
 The env file:
 
@@ -29,6 +29,7 @@ GIT_AUTHOR_EMAIL=...
 CLAUDE_PERMISSION_MODE=auto                 optional, see Claude settings
 CLAUDE_SETTINGS_REPO=me/claude              optional, see Claude settings
 CLAUDE_SETTINGS_FILE=config/settings.json   optional: where settings.json is in that repository
+FOO_TOKEN={{ op://Vault/Item/field }}       anything else reaches the container as is: the `${FOO_TOKEN}` of your MCP servers, what your own tools read
 ```
 
 On the host it lives in Secret Manager: `make secret` uploads it from 1Password, the VM fetches it at every boot. On a laptop, `make env` writes it to `./env`.
@@ -77,7 +78,7 @@ Two optional variables in the env file. Neither set: Claude's defaults.
   | `permissions` in `CLAUDE_SETTINGS_FILE` (default `settings.json`) | `~/.claude/settings.json`; hooks and status lines are not taken |
   | `CLAUDE.md` at the root | `~/.claude/CLAUDE.md` |
   | `.claude/skills/` | `~/.claude/skills` |
-  | `config/mcp.json` | user-level MCP servers |
+  | `config/mcp.json` | user-level MCP servers; their `${VAR}` come from the env file |
 
   Text only, pulled at every start: changing a permission is a `git push` and a `make restart`, never a rebuild. Software is the next section. Formats: [claude-settings.md](.claude/knowledge/claude-settings.md).
 
