@@ -11,7 +11,7 @@ data "ct_config" "ignition" {
   content = templatefile("${path.module}/ignition.yaml.tftpl", {
     name        = var.name
     project     = var.project
-    image_tag   = var.image_tag
+    orca_image  = var.orca_image
     ssh_key     = var.ssh_public_key
     compose     = file("${path.module}/../compose.yaml")
     data_device = "/dev/disk/by-id/scsi-0Google_PersistentDisk_${google_compute_disk.data.name}"

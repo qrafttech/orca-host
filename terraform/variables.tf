@@ -37,8 +37,8 @@ variable "ssh_public_key" {
   type        = string
 }
 
-variable "image_tag" {
-  description = "Tag of ghcr.io/qrafttech/orca-host to run."
+variable "orca_image" {
+  description = "The image this host runs, a full reference: the published base, or your own image built FROM it to add your tools. A tag moves; `sha-<sha>` or a digest pins."
   type        = string
-  default     = "main"
+  default     = "ghcr.io/qrafttech/orca-host:main"
 }

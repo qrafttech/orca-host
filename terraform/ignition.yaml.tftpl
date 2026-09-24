@@ -59,13 +59,13 @@ storage:
         inline: |
           #!/bin/sh
           # Starts, or updates, the stack. Compose runs from the docker:cli image: Flatcar ships none.
-          # The image is public: no registry login.
+          # Both images are public — the docker:cli one, and ORCA_IMAGE: no registry login here.
           set -eu
           exec docker run --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
             -v /opt/orca:/opt/orca:ro \
             -v /var/lib/orca:/var/lib/orca \
-            -e TS_HOSTNAME -e ORCA_DATA -e ORCA_IMAGE_TAG -e ORCA_ENV_FILE \
+            -e TS_HOSTNAME -e ORCA_DATA -e ORCA_IMAGE -e ORCA_ENV_FILE \
             -w /opt/orca docker:29.8.1-cli \
             docker compose --env-file /var/lib/orca/env up -d --pull always --remove-orphans
     # Docker's data root on the data disk: images, build cache and the volumes of project stacks survive a rebuild,
@@ -115,8 +115,9 @@ systemd:
         [Service]
         Type=oneshot
         RemainAfterExit=yes
-        Environment=TS_HOSTNAME=${name} ORCA_DATA=/var/lib/orca ORCA_IMAGE_TAG=${image_tag} ORCA_ENV_FILE=/var/lib/orca/env
+        Environment=TS_HOSTNAME=${name} ORCA_DATA=/var/lib/orca ORCA_IMAGE=${orca_image} ORCA_ENV_FILE=/var/lib/orca/env
         ExecStart=/opt/orca/up
+        ExecStartPost=-/usr/bin/docker image prune -f
         StandardOutput=journal+console
         StandardError=journal+console
 
