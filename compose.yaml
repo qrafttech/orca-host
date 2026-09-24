@@ -11,12 +11,13 @@
 #   GIT_AUTHOR_NAME / GIT_AUTHOR_EMAIL   git identity, also used as committer
 #   CLAUDE_PERMISSION_MODE   optional: default | acceptEdits | auto | plan, the permission mode of Claude panes
 #   CLAUDE_SETTINGS_REPO     optional: <owner>/<repo> holding your Claude settings; CLAUDE_SETTINGS_FILE the path
-#                            of settings.json in it. `permissions`, a root CLAUDE.md, .claude/skills, config/mcp.json
-#                            and config/bin.json are taken.
+#                            of settings.json in it. `permissions`, a root CLAUDE.md, .claude/skills and
+#                            config/mcp.json are taken. Text only: software goes in your own image, below.
 #   ORCA_ENV_FILE            the env file itself, for the orca-host container (set by the VM's unit)
 #   TS_HOSTNAME              the host's name on the tailnet (set by the VM's unit)
 #   ORCA_DATA                where state lives on the host: home/ and tailscale/ (set by the VM's unit)
-#   ORCA_IMAGE_TAG           which build of this image to run (set by the VM's unit)
+#   ORCA_IMAGE               the image to run, a full reference: the published base, or your own image built
+#                            FROM it to add your tools (set by the VM's unit)
 #   PAIRING_ADDRESS          only on a laptop, see compose.laptop.yaml
 
 services:
@@ -37,7 +38,7 @@ services:
     restart: unless-stopped
 
   orca-host:
-    image: ghcr.io/qrafttech/orca-host:${ORCA_IMAGE_TAG:-main}
+    image: ${ORCA_IMAGE:-ghcr.io/qrafttech/orca-host:main}
     container_name: orca-host
     network_mode: host
     init: true

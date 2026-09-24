@@ -2,7 +2,7 @@
 
 A headless [Orca](https://github.com/stablyai/orca) server on a GCP VM, used from the desktop and mobile Orca clients over the tailnet. One host per person, all of their projects on it.
 
-Three layers, each usable without the one above: an image (`Dockerfile`, published as `ghcr.io/qrafttech/orca-host`), a stack (`compose.yaml`, driven by one env file), a host (`terraform/`, a VM on GCP that runs the stack). How it works and why: [`.claude/knowledge/`](.claude/knowledge/).
+Three layers, each usable without the one above: an image (`Dockerfile`, published as `ghcr.io/qrafttech/orca-host`), a stack (`compose.yaml`, driven by one env file), a host (`terraform/`, a VM on GCP that runs the stack). The image is a base: the tools you want on top of it are an image of your own, built `FROM` it. How it works and why: [`.claude/knowledge/`](.claude/knowledge/).
 
 <img src="docs/architecture.svg" alt="The Orca clients reach the VM over the tailnet; in the VM, a tailscale container carries the address and an orca-host container runs orca serve; project stacks are sibling containers on the VM's Docker; a data disk holds the home, the Tailscale identity, Docker's images and volumes, and the env file, fetched from Secret Manager at every boot">
 
@@ -10,9 +10,10 @@ Three layers, each usable without the one above: an image (`Dockerfile`, publish
 
 | What | Where | Holds |
 |---|---|---|
-| The host | `terraform/terraform.tfvars` | name, GCP project, zone, SSH public key; size and image tag, optional |
+| The host | `terraform/terraform.tfvars` | name, GCP project, zone, SSH public key; size and image reference, optional |
 | You | the env file | Tailscale auth key, Claude token, GitHub token, git identity, Claude preferences |
-| Your Claude settings | a git repository of yours, optional | permissions, `CLAUDE.md`, skills, MCP servers, binaries |
+| Your Claude settings | a git repository of yours, optional | permissions, `CLAUDE.md`, skills, MCP server declarations |
+| Your tools | an image of yours, built `FROM` this one, optional | binaries, MCP servers, anything installed |
 | A project | its own repository | `orca.yaml`, worktree scripts, `.env` files, compose, `.claude/` |
 
 Nothing in this repository is per person or per project. The first two files are gitignored and come from 1Password: `terraform.tfvars` is the body of a Secure Note named `orca-host-tfvars`, the env file of one named `orca-host`, both in the vault `OP_VAULT` (`Private` by default). `make` fetches a file when it is missing; edit the local copy freely, `rm` it to refetch.
@@ -77,9 +78,38 @@ Two optional variables in the env file. Neither set: Claude's defaults.
   | `CLAUDE.md` at the root | `~/.claude/CLAUDE.md` |
   | `.claude/skills/` | `~/.claude/skills` |
   | `config/mcp.json` | user-level MCP servers |
-  | `config/bin.json` | binaries in `~/bin`, checksum-verified |
 
-  Formats: [claude-settings.md](.claude/knowledge/claude-settings.md).
+  Text only, pulled at every start: changing a permission is a `git push` and a `make restart`, never a rebuild. Software is the next section. Formats: [claude-settings.md](.claude/knowledge/claude-settings.md).
+
+## Your own tools
+
+The image names no tool: `claude`, `gh`, `git`, the Docker CLI, `ruby`, `python3`, `node`, and nothing beyond. A binary or an MCP server you want on the host goes in an image of yours, built `FROM` this one — the repository that holds your Claude settings is the natural place for it:
+
+```dockerfile
+FROM ghcr.io/qrafttech/orca-host:main@sha256:<digest>
+RUN curl -fsSL -o /tmp/x "<url>" && echo "<sha256>  /tmp/x" | sha256sum -c - \
+ && install -m 755 /tmp/x /usr/local/bin/<tool> && rm /tmp/x
+```
+
+`/usr/local/bin` is on the PATH of every session already. Your CI builds and pushes it; make it public — it holds no secret, and the host then needs no registry login. Point the host at it:
+
+```
+orca_image = "ghcr.io/me/orca-host:main"   # terraform.tfvars
+```
+
+That is an Ignition change, so once: `terraform -chdir=terraform apply -replace=google_compute_instance.vm`. From then on a new build under the same tag is `make restart`, as any other image change.
+
+**Keeping up with the base.** Pin the `FROM` to a digest, as above, and let Dependabot watch it — in your repository, `.github/dependabot.yml`:
+
+```yaml
+version: 2
+updates:
+  - package-ecosystem: docker
+    directory: /
+    schedule: { interval: daily }
+```
+
+Every time `main` moves here, you get a pull request bumping that digest, your CI builds it, and you merge when you want it. The digest is what makes a build reproducible: without it the `FROM` resolves to whatever the tag serves that day.
 
 ## Day to day
 
@@ -94,4 +124,4 @@ A change to `compose.yaml` or `terraform/ignition.yaml.tftpl` needs a rebuild: `
 
 ## Develop
 
-Every push builds the image for amd64 and arm64, tagged `<branch>` and `sha-<sha>`; `image_tag` in `terraform.tfvars` picks the one a host runs. On a Mac, `make build` builds `orca-host:dev` and `make up` runs it with Docker Desktop, on the laptop's own tailnet IP.
+Every push builds the image for amd64 and arm64, tagged `<branch>` and `sha-<sha>`; `orca_image` in `terraform.tfvars` is the full reference a host runs, so a `sha-<sha>` tag or a digest pins it to a build. On a Mac, `make build` builds `orca-host:dev` and `make up` runs it with Docker Desktop, on the laptop's own tailnet IP; `make up ORCA_IMAGE=<reference>` runs any other one.

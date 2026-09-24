@@ -16,6 +16,8 @@ OP_TFVARS := op://$(OP_VAULT)/orca-host-tfvars/notesPlain
 TF      := terraform -chdir=terraform
 # Every rebuild is a new host key, and the tailnet already authenticates the peer: no host-key check for this host.
 SSH     := ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR
+# What `make up` runs, the same variable a host uses: `make build`'s output by default, any reference on request.
+ORCA_IMAGE ?= orca-host:dev
 
 .PHONY: build up down secret bootstrap init plan apply pair pair-desktop pair-mobile restart logs shell ssh
 # A failed `op read` (locked vault, missing note) must not leave an empty file that Make then takes as up to date.
@@ -33,7 +35,7 @@ build:              ## build the image for this machine's architecture, as orca-
 	docker build -t orca-host:dev .
 
 up: env             ## run the stack here, advertised on this laptop's tailnet IP
-	PAIRING_ADDRESS=$$(tailscale ip -4) ORCA_ENV_FILE=env docker compose -f compose.yaml -f compose.laptop.yaml --env-file env up -d
+	PAIRING_ADDRESS=$$(tailscale ip -4) ORCA_IMAGE=$(ORCA_IMAGE) ORCA_ENV_FILE=env docker compose -f compose.yaml -f compose.laptop.yaml --env-file env up -d
 
 down:
 	docker compose -f compose.yaml -f compose.laptop.yaml --env-file env down

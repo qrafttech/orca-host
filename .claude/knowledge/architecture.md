@@ -36,6 +36,9 @@ Beside, not inside: the `orca-host` container has the VM's Docker socket, so a `
 - `gh`, `git`, the Docker CLI with the compose plugin. `git` authenticates to GitHub through `gh` (a `credential.helper` in the image), so `GH_TOKEN` is the only GitHub credential: no SSH key, no `gh auth login`.
 - `ruby`, `python3`, `node`: a project's Claude Code hooks run next to `claude`, not in the project's containers. The app's own runtime, at its own version, lives in those.
 - Versions are build args at the top of the `Dockerfile`. Orca is pinned to the desktop client's version (protocol compatibility). A bump is a PR that says why.
+- It names no tool beyond those. What one person wants installed is not in this repository at all: see below.
+
+**What is personal, and where.** Software is an image of the person's own, below. Text (permissions, `CLAUDE.md`, skills, `config/mcp.json`) is the settings repository, pulled at every start, because a permission should not need a rebuild. Secrets are the env file, because an image must never carry one. Three kinds, three mechanisms, no overlap.
 
 The entrypoint starts as root, gives `orca` the Docker socket's group and its home (a volume: empty and root-owned the first time), then re-executes as `orca`:
 
@@ -45,9 +48,23 @@ The entrypoint starts as root, gives `orca` the Docker socket's group and its ho
 4. Waits for `tailscale0`, unless `PAIRING_ADDRESS` is given.
 5. `exec orca serve --port 6768 --pairing-address <IP> [--mobile-pairing] --json`.
 
+### Your own image
+
+The host installs nothing at run time. A person's binaries and MCP servers are a `Dockerfile` of a few lines in their own repository, `FROM ghcr.io/qrafttech/orca-host:main@sha256:<digest>`, `RUN` per tool into `/usr/local/bin` (on every PATH already), built by their own CI; `orca_image` points the host at the result. The recipe is in the README, "Your own tools".
+
+Why not a boot-time installer — the entrypoint reading a list of declared URLs and checksums and fetching them into `~/bin` on the volume, which is the obvious alternative and the wrong one:
+
+- **Reproducible.** A `docker build` from a digest-pinned base gives the same image whoever runs it; a volume gives whatever it already held. Two hosts on the same image and the same settings repository could differ.
+- **Auditable.** `docker history` and a tag say what is installed. A volume only says it by being read.
+- **Pinned in time.** The digest in the `FROM` and the checksums in the `RUN` are fixed when the build runs, not re-resolved against a release page months later.
+- **No package format to maintain.** Each new release shape (a bare binary, a `.tar.gz`, a `.zip`, a nested path) was a special case in shell. `RUN` is the whole vocabulary, and it is Docker's, not ours.
+- **It is what the VM is for.** Flatcar is immutable so that nothing is installed on the host; installing into a volume at every start put the moving parts back.
+
+The cost is a rebuild for a new tool instead of a restart, and a derived image going stale when the base moves. A digest-pinned `FROM` plus Dependabot in the derived repository turns the second into a pull request per base build. Private derived images are not supported: `/opt/orca/up` does no registry login, so a derived image must be public — it holds no secret, only software that was already downloadable.
+
 ### CI
 
-`.github/workflows/ci.yml`, on every push: lint (hadolint, shellcheck, `terraform fmt` and `validate`), build amd64, smoke-test the ready contract (an `orca_server_ready` line with `schemaVersion: 1`, then `docker version` from inside the container) and `prune-stacks` (a compose stack started from a `/home/orca` directory that no longer exists is gone by the time the server is ready), then push the multi-arch image as `<branch>` and `sha-<sha>`. The `main` tag moves; a host pinned to a build uses the sha tag as `image_tag`.
+`.github/workflows/ci.yml`, on every push: lint (hadolint, shellcheck, `terraform fmt` and `validate`), build amd64, smoke-test the ready contract (an `orca_server_ready` line with `schemaVersion: 1`, then `docker version` from inside the container) and `prune-stacks` (a compose stack started from a `/home/orca` directory that no longer exists is gone by the time the server is ready), then push the multi-arch image as `<branch>` and `sha-<sha>`. The `main` tag moves; a host pinned to a build names the sha tag, or a digest, in `orca_image`. Those tags are also the contract of a derived image: its `FROM` names one of them.
 
 ## The stack
 
@@ -74,7 +91,7 @@ The VM is Flatcar Container Linux: immutable, Docker built in, nothing installed
 - `/opt/orca/compose.yaml`, `/opt/orca/fetch-env`, `/opt/orca/up` (`/etc` is noexec on Flatcar)
 - `/etc/docker/daemon.json`: Docker's data root at `/var/lib/orca/docker`, and a drop-in so `docker.service` starts after the data disk is mounted
 - `orca-env.service`: fetches the secret with the VM's own service account, retrying until a version exists (`make secret` may come after `make apply`)
-- `orca.service`: `docker compose up -d --pull always --remove-orphans`, run from the `docker:cli` image, since Flatcar ships no compose
+- `orca.service`: `docker compose up -d --pull always --remove-orphans`, run from the `docker:cli` image, since Flatcar ships no compose. Then `docker image prune -f`, once the stack is up: `--pull always` on a moving tag leaves the image it replaced untagged, and a full orca-host image is not small next to every project's images on the same disk. Dangling only, so nothing tagged and nothing a container uses is touched, and a failed prune does not fail the unit.
 
 **Secrets.** Terraform creates the Secret Manager secret empty; versions are added by `make secret`, so no secret ever passes through Terraform or its state. The VM's service account reads that one secret and nothing else. 1Password is never on the host.
 
@@ -83,7 +100,7 @@ The VM is Flatcar Container Linux: immutable, Docker built in, nothing installed
 | Disk | Size | Holds | On a rebuild |
 |---|---|---|---|
 | boot | `boot_disk_gb`, 20 GB by default | Flatcar, nothing else | replaced with the VM |
-| data | `data_disk_gb`, 50 GB by default | `/var/lib/orca`: `home/` (checkouts, worktrees, `~/.claude`, `~/bin`, Orca state), `tailscale/` (node identity), `docker/` (Docker's data root: the images, the containers, the build cache, the named volumes of project stacks), `env` | kept |
+| data | `data_disk_gb`, 50 GB by default | `/var/lib/orca`: `home/` (checkouts, worktrees, `~/.claude`, Orca state), `tailscale/` (node identity), `docker/` (Docker's data root: the images, the containers, the build cache, the named volumes of project stacks), `env` | kept |
 
 Everything under `/var/lib/orca` survives a rebuild, Docker's root included: nothing is pulled again, a worktree's `postgres_data` is still there. Docker's root is there by `daemon.json`, not by Docker's default (`/var/lib/docker`, on the boot disk): once Flatcar has its share, the boot disk is too small for one project's images, and what it held went with the VM. A database in a Docker volume is a worktree database all the same: its setup hook creates it, its archive script removes it (`docker compose down -v`), nothing migrates it. The data disk is `pd-balanced`, `prevent_destroy`, daily snapshots at 03:00 (Docker's root included), seven kept, kept if the disk is deleted; it grows live, never shrinks. Docker is what fills it: `docker system df` says what takes it, `docker system prune` from `make shell` gives back what no container uses (volumes only with `--volumes`).
 
@@ -104,7 +121,7 @@ Host <name>
 | Change | Action |
 |---|---|
 | a new secret version, a new variable in it, a new image under the same tag | `make restart` |
-| `compose.yaml`, `terraform/ignition.yaml.tftpl` | `terraform -chdir=terraform apply -replace=google_compute_instance.vm` |
+| `compose.yaml`, `terraform/ignition.yaml.tftpl`, `orca_image` | `terraform -chdir=terraform apply -replace=google_compute_instance.vm` |
 
 Ignition runs at first boot only, and `compose.yaml` is baked into it. A rebuild keeps the data disk: checkouts, Tailscale identity, pairing, Docker's images and the volumes of project stacks. Only Flatcar is new.
 
