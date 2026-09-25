@@ -115,16 +115,33 @@ updates:
 
 Every time `main` moves here, you get a pull request bumping that digest, your CI builds it, and you merge when you want it. The digest is what makes a build reproducible: without it the `FROM` resolves to whatever the tag serves that day.
 
+## Updates
+
+| You changed | What happens | You do |
+|---|---|---|
+| this repository, merged to `main`; the host runs the base image | the host redeploys within five minutes of the build | nothing |
+| this repository, merged to `main`; the host runs your own image | Dependabot opens a pull request in your repository, within a day | merge it: next row |
+| your own image, merged to its `main` | your CI builds it; the host redeploys within five minutes | nothing |
+| the env note, or a token it references | nothing until the next restart | `make restart` |
+| your settings repository: permissions, `CLAUDE.md`, skills, `config/mcp.json` | pulled at every start of the container | `make restart` |
+| `compose.yaml`, `terraform/ignition.yaml.tftpl`, `orca_image` | nothing: Ignition runs at first boot only | `terraform -chdir=terraform apply -replace=google_compute_instance.vm` |
+
+- **Redeploy**: the host sees a new image under the tag it follows and restarts its container on it.
+- **Restart** (`make restart`): the env file rendered again from 1Password, the container restarted, the image pulled.
+- **Rebuild** (`apply -replace`): a new VM, from Ignition.
+
+All three end live terminals, and all three keep the data disk: checkouts, Tailscale identity, pairing, Docker's images and the volumes of project stacks. To stay on one build, name its `sha-<sha>` tag in `orca_image`: the host then never redeploys by itself.
+
 ## Day to day
 
 ```bash
-make restart   # after editing the env note or rotating a token, or to take a new image now rather than within five minutes; ends live terminals
+make restart   # re-render the env file, re-run the stack, take a new image now; ends live terminals
 make logs
 make shell     # a shell in the container, as `orca`, the same paths an Orca terminal sees
 make ssh       # a shell on the VM, as `core`
 ```
 
-A change to `compose.yaml` or `terraform/ignition.yaml.tftpl` needs a rebuild: `terraform -chdir=terraform apply -replace=google_compute_instance.vm`. The data disk survives it: checkouts, Tailscale identity, pairing, Docker's images and the volumes of project stacks. Docker is what fills the data disk over time: `docker system prune` from `make shell`, and a worktree's archive script should `docker compose down -v`.
+Docker is what fills the data disk over time: `docker system prune` from `make shell`, and a worktree's archive script should `docker compose down -v`.
 
 ## Develop
 
