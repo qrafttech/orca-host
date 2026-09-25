@@ -4,19 +4,19 @@ A headless [Orca](https://github.com/stablyai/orca) server on a GCP VM, used fro
 
 Three layers, each usable without the one above: an image (`Dockerfile`, published as `ghcr.io/qrafttech/orca-host`), a stack (`compose.yaml`, driven by one env file), a host (`terraform/`, a VM on GCP that runs the stack). The image is a base: the tools you want on top of it are an image of your own, built `FROM` it. How it works and why: [`.claude/knowledge/`](.claude/knowledge/).
 
-<img src="docs/architecture.svg" alt="The Orca clients reach the VM over the tailnet; in the VM, a tailscale container carries the address and an orca-host container runs orca serve; project stacks are sibling containers on the VM's Docker; a data disk holds the home, the Tailscale identity, Docker's images and volumes, and the env file, fetched from Secret Manager at every boot">
+<img src="docs/architecture.svg" alt="The Orca clients reach the VM over the tailnet; in the VM, a tailscale container carries the address and an orca-host container runs orca serve; project stacks are sibling containers on the VM's Docker; a data disk holds the home, the Tailscale identity, Docker's images and volumes, and the env file, rendered from 1Password at every boot">
 
 ## What is configured where
 
 | What | Where | Holds |
 |---|---|---|
-| The host | `terraform/terraform.tfvars` | name, GCP project, zone, SSH public key; size and image reference, optional |
+| The host | `terraform/terraform.tfvars` | name, GCP project, zone, 1Password vault, SSH public key; size and image reference, optional |
 | You | the env file | Tailscale auth key, Claude token, GitHub token, git identity, Claude preferences |
 | Your Claude settings | a git repository of yours, optional | permissions, `CLAUDE.md`, skills, MCP server declarations |
 | Your tools | an image of yours, built `FROM` this one, optional | binaries, MCP servers, anything installed |
 | A project | its own repository | `orca.yaml`, worktree scripts, `.env` files, compose, `.claude/` |
 
-Nothing in this repository is per person or per project. The first two files are gitignored and come from 1Password: `terraform.tfvars` is the body of a Secure Note named `orca-host-tfvars`, the env file of one named `orca-host`, both in the vault `OP_VAULT` (`Private` by default). `make` fetches a file when it is missing; edit the local copy freely, `rm` it to refetch. A line of the env note may point at another item, `FOO_TOKEN={{ op://Vault/Item/field }}`: `op inject` resolves it on the way out, so a token lives once, in its own item.
+Nothing in this repository is per person or per project. The first two files are gitignored and come from 1Password: `terraform.tfvars` is the body of a Secure Note named `orca-host-tfvars`, the env file of one named `orca-host`, both in the vault `op_vault` names in the tfvars. `make` fetches a file when it is missing; edit the local copy freely, `rm` it to refetch. A line of the env note may point at another item, `FOO_TOKEN={{ op://Vault/Item/field }}`: `op inject` resolves it, so a token lives once, in its own item — and the vault must be that same one, since a service account is scoped per vault.
 
 The env file:
 
@@ -32,7 +32,7 @@ CLAUDE_SETTINGS_FILE=config/settings.json   optional: where settings.json is in 
 FOO_TOKEN={{ op://Vault/Item/field }}       anything else reaches the container as is: the `${FOO_TOKEN}` of your MCP servers, what your own tools read
 ```
 
-On the host it lives in Secret Manager: `make secret` uploads it from 1Password, the VM fetches it at every boot. On a laptop, `make env` writes it to `./env`.
+The host renders that note itself, at every boot. Secret Manager holds one line — the token of a 1Password service account, read-only on that one vault — and `make secret` puts it there, once. So a token you rotate in 1Password, or a variable you add to the note, is a `make restart` away; nothing is frozen at the moment it was uploaded. On a laptop, `make env` renders the same note with your own account, into `./env`.
 
 ## Install
 
@@ -43,16 +43,17 @@ Needed on the laptop: `docker`, `terraform`, `gcloud`, `op` (1Password CLI), `jq
    <img src="docs/tailscale-tag.png" width="49%" alt="Create tag">
 
 2. **Once per GCP project**: `gcloud auth application-default login` (Terraform's login, separate from `gcloud auth login`), then `make bootstrap` for the state bucket.
-3. **The two Secure Notes**: `orca-host-tfvars` is `terraform/terraform.tfvars.example` filled in; `orca-host` is the env file above. Fine-grained GitHub tokens do not work; the organisation must allow classic ones.
+3. **A 1Password vault for the host**, technical: the tokens your agents read, no password data. A service account on it, read-only, its token saved in an item named `orca-host-service-account` in that same vault. `make secret` reads it from there; the host never does, it gets the token from Secret Manager.
+4. **The two Secure Notes**, in that vault: `orca-host-tfvars` is `terraform/terraform.tfvars.example` filled in; `orca-host` is the env file above. Fine-grained GitHub tokens do not work; the organisation must allow classic ones. The first fetch is the only one that cannot read the vault name from the tfvars: `make OP_VAULT="<vault>" init`.
 
    <img src="docs/tailscale-auth-key.png" width="49%" alt="Generate auth key"> <img src="docs/github-token.png" width="49%" alt="Token scopes">
 
-4. **The host**:
+5. **The host**:
 
    ```bash
    make init      # once per checkout
    make apply     # VPC, service account, secret, data disk, VM
-   make secret    # the env file into Secret Manager; the VM picks it up
+   make secret    # the 1Password service-account token into Secret Manager
    make pair      # the desktop client, then the phone
    ```
 
@@ -65,6 +66,8 @@ Add one from the app: Add a project → Clone from URL, the https URL, parent fo
 <img src="docs/orca-add-project.png" width="49%" alt="Add a project"> <img src="docs/orca-clone-from-url.png" width="49%" alt="Clone from URL">
 
 Everything a project needs is in its repository and runs from its worktree setup hook: `docker compose` on the VM's Docker, `.env` files, base images. What it starts is reachable at `http://<tailnet IP>:<port>`. Deleting a worktree from Orca tears its stack down within 5 minutes, volumes included. Claude Code in a worktree works as on a laptop: the project's own `.claude/` and `CLAUDE.md` apply on top of your settings, hooks run in the container (`ruby`, `python3`, `node` are there), and workspace trust is asked once per project.
+
+**Project secrets.** `op` is in the image, and the host hands its service-account token to every session: a session reads the host's vault itself, so a project whose dev `.env` lives in 1Password is brought up by its own setup hook, `op inject -i .env.tpl -o .env`, with no step on a laptop. That token is in every session's environment, so everything a session runs can read that vault: that is why the vault is technical and read-only. In Claude Code's `auto` mode, `op` also needs an allow rule in your settings repository: the permission classifier refuses it as credential materialization.
 
 ## Claude settings
 
@@ -84,7 +87,7 @@ Two optional variables in the env file. Neither set: Claude's defaults.
 
 ## Your own tools
 
-The image names no tool: `claude`, `gh`, `git`, the Docker CLI, `ruby`, `python3`, `node`, and nothing beyond. A binary or an MCP server you want on the host goes in an image of yours, built `FROM` this one — the repository that holds your Claude settings is the natural place for it:
+The image names no tool of yours: `claude`, `gh`, `git`, the Docker CLI, `op`, `ruby`, `python3`, `node` — what the host itself runs on, and nothing beyond. A binary or an MCP server you want on the host goes in an image of yours, built `FROM` this one — the repository that holds your Claude settings is the natural place for it:
 
 ```dockerfile
 FROM ghcr.io/qrafttech/orca-host:main@sha256:<digest>
@@ -115,7 +118,7 @@ Every time `main` moves here, you get a pull request bumping that digest, your C
 ## Day to day
 
 ```bash
-make restart   # after `make secret`, or to take a new image now rather than within five minutes; ends live terminals
+make restart   # after editing the env note or rotating a token, or to take a new image now rather than within five minutes; ends live terminals
 make logs
 make shell     # a shell in the container, as `orca`, the same paths an Orca terminal sees
 make ssh       # a shell on the VM, as `core`

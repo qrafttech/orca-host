@@ -2,6 +2,7 @@
 name           = "orca-host"
 project        = "my-gcp-project"
 zone           = "europe-west9-b"
+op_vault       = "AI Agents"   # the 1Password vault the host reads, through its service account
 ssh_public_key = "ssh-ed25519 AAAA... me@laptop"
 # machine_type = "e2-standard-4"
 # data_disk_gb = 50

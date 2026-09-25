@@ -1,11 +1,14 @@
 # syntax=docker/dockerfile:1
-# orca-host — `orca serve` headless, with the tools an Orca worktree needs: claude, gh, git, docker CLI + compose.
+# orca-host — `orca serve` headless, with the tools an Orca worktree needs: claude, gh, git, docker CLI + compose, op.
 # Built for amd64 and arm64. State is not in the image: /home/orca is a volume, see compose.yaml.
 
 ARG ORCA_VERSION=1.4.205
 ARG CLAUDE_CODE_VERSION=2.1.282
 ARG GH_VERSION=2.101.0
 ARG DOCKER_VERSION=29.8.1
+# Also pinned in terraform/ignition.yaml.tftpl, which renders the env file with the same CLI before this
+# image is pulled. Two independent pins: the VM's copy must work even when this image does not.
+ARG OP_VERSION=2.39.0
 
 # --- Orca: the official AppImage, extracted once (no FUSE in a container) ---------------------------------
 # An AppImage is an ELF runtime with a squashfs appended: unsquashfs at the runtime's size extracts it without
@@ -48,6 +51,9 @@ RUN curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_$
 # --- docker CLI + compose plugin, static binaries from the official image ------------------------------------
 FROM docker:${DOCKER_VERSION}-cli AS docker-cli
 
+# --- op: the 1Password CLI, the static binary from the official image -----------------------------------------
+FROM 1password/op:${OP_VERSION} AS op
+
 # --- the image -------------------------------------------------------------------------------------------------
 FROM debian:12-slim
 ARG CLAUDE_CODE_VERSION
@@ -69,6 +75,7 @@ COPY --from=claude /opt/claude /opt/claude
 COPY --from=gh /usr/local/bin/gh /usr/local/bin/gh
 COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
 COPY --from=docker-cli /usr/local/libexec/docker/cli-plugins/docker-compose /usr/local/libexec/docker/cli-plugins/docker-compose
+COPY --from=op /usr/local/bin/op /usr/local/bin/op
 
 RUN useradd --create-home --shell /bin/bash orca \
  && ln -s "/opt/claude/${CLAUDE_CODE_VERSION}/claude" /usr/local/bin/claude \

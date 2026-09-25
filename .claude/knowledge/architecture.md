@@ -8,7 +8,7 @@ laptop / phone ──tailnet──▶ VM (Flatcar Container Linux, Ignition)
                              │    home/       /home/orca: checkouts, ~/.claude, Orca state
                              │    tailscale/  node identity: same tailnet IP after a rebuild
                              │    docker/     Docker's data root: images, build cache, the volumes of project stacks
-                             │    env         the env file, fetched from Secret Manager at every boot
+                             │    env         the env file, rendered from the 1Password note at every boot
                              └─ compose.yaml
                                   ├─ tailscale   host network, /dev/net/tun
                                   └─ orca-host   host network, `orca serve --pairing-address <tailnet IP>`
@@ -21,8 +21,8 @@ laptop / phone ──tailnet──▶ VM (Flatcar Container Linux, Ignition)
 
 | | Runs | Installed |
 |---|---|---|
-| The VM | Docker, and two containers: `tailscale` and `orca-host` | nothing else |
-| The `orca-host` container | `orca serve`, every Claude pane, every Orca terminal, a project's Claude Code hooks, `prune-stacks` every 5 minutes | `claude`, `gh`, `git`, the Docker CLI, `ruby`, `python3`, `node` |
+| The VM | Docker, two containers (`tailscale`, `orca-host`), and at every boot a transient `op` one that renders the env file | nothing else |
+| The `orca-host` container | `orca serve`, every Claude pane, every Orca terminal, a project's Claude Code hooks, `prune-stacks` every 5 minutes | `claude`, `gh`, `git`, the Docker CLI, `op`, `ruby`, `python3`, `node` |
 | A project's containers | the app, its database, its cache: a worktree's stack | the app's runtime, at its version, from the project's compose |
 
 Beside, not inside: the `orca-host` container has the VM's Docker socket, so a `docker compose up` from an Orca terminal creates the project's containers on the VM's Docker, as siblings of `orca-host`. Same path everywhere: on the VM, `/home/orca` is a symlink to `/var/lib/orca/home`, which the container mounts at `/home/orca`, so a project's `./:/app` bind mount names the same files on both sides.
@@ -34,6 +34,7 @@ Beside, not inside: the `orca-host` container has the VM's Docker socket, so a `
 - `orca serve` from the official AppImage, extracted with `unsquashfs` at build time. No FUSE in a container, and the arm64 build runs under QEMU, where the kernel's binfmt rule refuses to execute an AppImage.
 - Claude Code as the native binary, checksum-verified against the release manifest. `DISABLE_AUTOUPDATER=1`: the image is the version.
 - `gh`, `git`, the Docker CLI with the compose plugin. `git` authenticates to GitHub through `gh` (a `credential.helper` in the image), so `GH_TOKEN` is the only GitHub credential: no SSH key, no `gh auth login`.
+- `op`, the 1Password CLI, the static binary from the official image. The host's secrets *are* 1Password items — the VM renders the env file with the same CLI, from its own image, before this one is pulled — so `op` is infrastructure here, like `gh`, not somebody's tool. What it can read is the env file's business, below.
 - `ruby`, `python3`, `node`: a project's Claude Code hooks run next to `claude`, not in the project's containers. The app's own runtime, at its own version, lives in those.
 - Versions are build args at the top of the `Dockerfile`. Orca is pinned to the desktop client's version (protocol compatibility). A bump is a PR that says why.
 - It names no tool beyond those. What one person wants installed is not in this repository at all: see below.
@@ -88,12 +89,22 @@ The VM is Flatcar Container Linux: immutable, Docker built in, nothing installed
 - the SSH key for `core`
 - the data disk: ext4, labelled `orca`, mounted at `/var/lib/orca`, never wiped (`wipe_filesystem: false`)
 - `/home/orca → /var/lib/orca/home`
-- `/opt/orca/compose.yaml`, `/opt/orca/fetch-env`, `/opt/orca/up` (`/etc` is noexec on Flatcar)
+- `/opt/orca/compose.yaml`, `/opt/orca/render-env`, `/opt/orca/up` (`/etc` is noexec on Flatcar)
 - `/etc/docker/daemon.json`: Docker's data root at `/var/lib/orca/docker`, and a drop-in so `docker.service` starts after the data disk is mounted
-- `orca-env.service`: fetches the secret with the VM's own service account, retrying until a version exists (`make secret` may come after `make apply`)
+- `orca-env.service`: renders the env file, below. Retries until the secret has a version (`make secret` may come after `make apply`). It runs `op`, so it waits for Docker as `orca.service` does
 - `orca.service`: `docker compose up -d --pull always --remove-orphans`, run from the `docker:cli` image, since Flatcar ships no compose. Then `docker image prune -f`, once the stack is up: `--pull always` on a moving tag leaves the image it replaced untagged, and a full orca-host image is not small next to every project's images on the same disk. Dangling only, so nothing tagged and nothing a container uses is touched, and a failed prune does not fail the unit.
 
-**Secrets.** Terraform creates the Secret Manager secret empty; versions are added by `make secret`, so no secret ever passes through Terraform or its state. The VM's service account reads that one secret and nothing else. 1Password is never on the host. The env note may reference other 1Password items (`{{ op://Vault/Item/field }}`): `op inject` resolves them inside `make secret`, on the laptop, so the host still sees one flat file and a token is stored once.
+**Secrets.** Two hops, one vault. Secret Manager holds a single line, a 1Password service-account token; Terraform creates that secret empty and `make secret` adds the versions, so no secret ever passes through Terraform or its state. At every start of `orca-env.service` the VM reads it with its own GCP identity — the only permission that identity has — and renders the env file from the Secure Note `orca-host` in `op_vault`, `{{ op://Vault/Item/field }}` references included. `op` runs from its own image, as compose runs from `docker:cli`: Flatcar installs nothing.
+
+The chain is the VM's GCP identity → one secret → one token → one vault, read-only. `op_vault` is a technical vault: the tokens agents read, no password data. A service account is scoped per vault, not per item, so every reference in the note has to resolve inside that vault — which is also what keeps a token in one item instead of copied into the note.
+
+What this buys is rotation. A token changed in 1Password reaches the host with `make restart`; a new variable is a line in the note and the same restart. Nothing is frozen at the moment it was uploaded, and the laptop is out of the loop — `make env` resolves the same note, with the person's own account, for a stack run there. The service-account token itself expires: renewing it is the one secret placed by hand, a new token in the item then `make secret`. Until that is done the host does not come up — `orca-env.service` fails rather than start the stack on the env file it rendered last time, and says so on the serial console. Restarting the two units is the way back.
+
+**The token in a session.** `op` is in the image, and `render-env` appends `OP_SERVICE_ACCOUNT_TOKEN` to the file it writes: the sessions read the same read-only vault, with the token the VM already holds rather than a copy the note would read back from the vault. A project whose `.env` lives in 1Password is then brought up by its own worktree setup hook — `op inject -i .env.tpl -o .env` — with no step on a laptop, and a tool a session is asked to set up can fetch its own credential.
+
+The cost is plain: every session, and everything a session runs, reads that vault. It is bounded by what is in the vault, which is the reason the vault is technical, read-only and separate. The same env file already carries `GH_TOKEN` and `CLAUDE_CODE_OAUTH_TOKEN` into every session, so this adds credentials of the same order next to those, not a new kind of exposure — the judgement to make is what goes in the vault, not whether the file has secrets in it.
+
+Claude Code's own permission classifier refuses `op` in `auto` mode, as credential materialization. It takes an allow rule in the settings repository for a session to use it there.
 
 **Disks.** Two, with different fates:
 
@@ -121,7 +132,7 @@ Host <name>
 | Change | Action |
 |---|---|
 | a new image under the same tag | nothing: the host redeploys itself within five minutes |
-| a new secret version, a new variable in it | `make restart` |
+| a token rotated in 1Password, a new variable in the env note, a new secret version | `make restart` |
 | `compose.yaml`, `terraform/ignition.yaml.tftpl`, `orca_image` | `terraform -chdir=terraform apply -replace=google_compute_instance.vm` |
 
 `orca-update.timer` restarts `orca.service` every five minutes. `/opt/orca/up` is `--pull always`, and compose recreates a container only when the digest it pulled differs from the running one, so a tick with nothing new is a manifest request and no more, and a merge to `main` reaches the host without anyone doing anything. The cost is that a redeploy ends live terminals, and no one chose its moment: a host following a tag takes what the tag serves. A host pinned to `sha-<sha>` in `orca_image` never moves, and the timer then only ever costs the manifest request.

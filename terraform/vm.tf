@@ -11,6 +11,7 @@ data "ct_config" "ignition" {
   content = templatefile("${path.module}/ignition.yaml.tftpl", {
     name        = var.name
     project     = var.project
+    op_vault    = var.op_vault
     orca_image  = var.orca_image
     ssh_key     = var.ssh_public_key
     compose     = file("${path.module}/../compose.yaml")

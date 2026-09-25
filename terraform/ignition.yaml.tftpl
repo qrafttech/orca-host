@@ -30,28 +30,42 @@ storage:
       contents:
         inline: |
           ${indent(10, compose)}
-    - path: /opt/orca/fetch-env
+    - path: /opt/orca/render-env
       mode: 0755
       contents:
         inline: |
           #!/bin/sh
-          # Fetches this host's env file from Secret Manager into /var/lib/orca/env, with the VM's own identity.
+          # Writes /var/lib/orca/env, the file the stack starts from. Runs on the VM, before any container exists.
+          # Secret Manager holds one line, a 1Password service-account token. The VM reads it with its own GCP
+          # identity, then op reads the note `orca-host` from the vault that token is scoped to and resolves its
+          # {{ op:// }} references. Rotate a token in 1Password, restart this unit: that is the whole point.
+          # op runs from its own image: Flatcar installs nothing. The token itself goes into the file too, so the
+          # sessions' own `op` reads the same vault.
           # Retries until the secret has a version: `make secret` may come after `make apply`.
           set -eu
-          secret="projects/${project}/secrets/orca-host-${name}-env/versions/latest"
+          secret="projects/${project}/secrets/orca-host-${name}-op-token/versions/latest"
+          note="op://${op_vault}/orca-host/notesPlain"
           # a pipeline's status is jq's, which is happy with an empty curl: test the values, not the commands
           while :; do
-            token=$(curl -sf -H 'Metadata-Flavor: Google' \
+            access=$(curl -sf -H 'Metadata-Flavor: Google' \
               'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' \
               | jq -r '.access_token // empty')
-            data=$(curl -sf -H "Authorization: Bearer $token" \
+            data=$(curl -sf -H "Authorization: Bearer $access" \
               "https://secretmanager.googleapis.com/v1/$secret:access" | jq -r '.payload.data // empty')
             [ -n "$data" ] && break
             echo "no version of $secret yet, retrying in 15s"
             sleep 15
           done
+          # a token pasted into the console by hand may carry a newline; op wants the value alone
+          OP_SERVICE_ACCOUNT_TOKEN=$(echo "$data" | base64 -d | tr -d '\r\n')
+          export OP_SERVICE_ACCOUNT_TOKEN
+          op() { docker run --rm -i -e OP_SERVICE_ACCOUNT_TOKEN 1password/op:2.39.0 op "$@"; }
+          # `sh` has no pipefail: hold the result, write nothing rather than half a file. Failing is the point —
+          # the stack must not come up on the env file of the last boot. `make secret` is the way back.
+          rendered=$(op read "$note" | op inject)
+          [ -n "$rendered" ] || { echo "$note rendered empty: expired token, or an item it cannot read"; exit 1; }
           umask 077
-          echo "$data" | base64 -d > /var/lib/orca/env.tmp
+          printf '%s\nOP_SERVICE_ACCOUNT_TOKEN=%s\n' "$rendered" "$OP_SERVICE_ACCOUNT_TOKEN" > /var/lib/orca/env.tmp
           mv /var/lib/orca/env.tmp /var/lib/orca/env
     - path: /opt/orca/up
       mode: 0755
@@ -89,15 +103,17 @@ systemd:
       enabled: true
       contents: |
         [Unit]
-        Description=orca-host: fetch the env file from Secret Manager
-        After=network-online.target
+        Description=orca-host: render the env file from 1Password
+        # `op` runs from an image, so this unit needs Docker as much as orca.service does.
+        After=network-online.target docker.service
         Wants=network-online.target
+        Requires=docker.service
         RequiresMountsFor=/var/lib/orca
 
         [Service]
         Type=oneshot
         RemainAfterExit=yes
-        ExecStart=/opt/orca/fetch-env
+        ExecStart=/opt/orca/render-env
         StandardOutput=journal+console
         StandardError=journal+console
 
