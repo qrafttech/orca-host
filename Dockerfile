@@ -3,7 +3,7 @@
 # Built for amd64 and arm64. State is not in the image: /home/orca is a volume, see compose.yaml.
 
 ARG ORCA_VERSION=1.4.205
-ARG CLAUDE_CODE_VERSION=2.1.276
+ARG CLAUDE_CODE_VERSION=2.1.282
 ARG GH_VERSION=2.101.0
 ARG DOCKER_VERSION=29.8.1
 
