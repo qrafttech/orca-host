@@ -35,13 +35,11 @@ storage:
       contents:
         inline: |
           #!/bin/sh
-          # Renders this host's env file into /var/lib/orca/env, at every start of orca-env.service.
-          # Two credentials, two hops: the VM's own GCP identity reads one Secret Manager secret, which holds a
-          # 1Password service-account token; that token reads one vault, where the env note and every item it
-          # references live. So a token rotated in 1Password reaches the host with a restart of this unit, and a
-          # new variable is a line in the note — nothing is frozen at the time it was uploaded.
-          # `op` runs from its own image, as compose runs from docker:cli: Flatcar installs nothing. The token is
-          # passed to that container and never written to disk; the orca-host container sees the rendered file only.
+          # Writes /var/lib/orca/env, the file the stack starts from. Runs on the VM, before any container exists.
+          # Secret Manager holds one line, a 1Password service-account token. The VM reads it with its own GCP
+          # identity, then op reads the note `orca-host` from the vault that token is scoped to and resolves its
+          # {{ op:// }} references. Rotate a token in 1Password, restart this unit: that is the whole point.
+          # op runs from its own image — Flatcar installs nothing — and the token stays here, out of the container.
           # Retries until the secret has a version: `make secret` may come after `make apply`.
           set -eu
           secret="projects/${project}/secrets/orca-host-${name}-op-token/versions/latest"
@@ -57,16 +55,14 @@ storage:
             echo "no version of $secret yet, retrying in 15s"
             sleep 15
           done
-          # a version posted by hand through the console carries whatever the editor added: op wants the value alone
+          # a token pasted into the console by hand may carry a newline; op wants the value alone
           OP_SERVICE_ACCOUNT_TOKEN=$(echo "$data" | base64 -d | tr -d '\r\n')
           export OP_SERVICE_ACCOUNT_TOKEN
           op() { docker run --rm -i -e OP_SERVICE_ACCOUNT_TOKEN 1password/op:2.39.0 op "$@"; }
-          # `sh` has no pipefail, and a half-resolved file would start the stack on stale values: keep the result
-          # in the shell, write it only once it is whole.
+          # `sh` has no pipefail: hold the result, write nothing rather than half a file. Failing is the point —
+          # the stack must not come up on the env file of the last boot. `make secret` is the way back.
           rendered=$(op read "$note" | op inject)
-          # Nothing to fall back on but the last rendered file, and starting on stale secrets is what this
-          # replaced: fail, and say what to look at. `make secret` then `make restart` is the way back.
-          [ -n "$rendered" ] || { echo "$note rendered empty: expired service-account token, or an item it cannot read"; exit 1; }
+          [ -n "$rendered" ] || { echo "$note rendered empty: expired token, or an item it cannot read"; exit 1; }
           umask 077
           printf '%s\n' "$rendered" > /var/lib/orca/env.tmp
           mv /var/lib/orca/env.tmp /var/lib/orca/env
