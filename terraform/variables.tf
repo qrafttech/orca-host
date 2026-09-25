@@ -8,6 +8,11 @@ variable "project" {
   type        = string
 }
 
+variable "op_vault" {
+  description = "The 1Password vault the host renders its env note from: a technical vault, holding the tokens agents read and no password data. The host's service account is scoped to this one vault, read-only, so every {{ op:// }} reference in the note must live in it."
+  type        = string
+}
+
 variable "zone" {
   description = "GCP zone."
   type        = string

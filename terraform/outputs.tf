@@ -3,8 +3,8 @@ output "name" {
 }
 
 output "secret" {
-  description = "Where the env file goes: `make secret`."
-  value       = google_secret_manager_secret.env.secret_id
+  description = "Where the 1Password service-account token goes: `make secret`."
+  value       = google_secret_manager_secret.op_token.secret_id
 }
 
 output "ssh" {
