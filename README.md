@@ -117,15 +117,20 @@ Every time `main` moves here, you get a pull request bumping that digest, your C
 
 ## Updates
 
-| You changed | How it reaches the host |
-|---|---|
-| this repository, merged to `main` | on the base image: by itself, within five minutes of the build. On your own image: Dependabot opens a pull request in your repository within a day, you merge it, and it goes as the next row |
-| your own image, merged to its `main` | by itself, within five minutes of your CI's build |
-| the env note, or a token it references | `make restart` |
-| your settings repository: permissions, `CLAUDE.md`, skills, `config/mcp.json` | `make restart`, or the next redeploy: it is pulled at every start |
-| `compose.yaml`, `terraform/ignition.yaml.tftpl`, `orca_image` | `terraform -chdir=terraform apply -replace=google_compute_instance.vm` |
+| You changed | What happens | You do |
+|---|---|---|
+| this repository, merged to `main`; the host runs the base image | the host redeploys within five minutes of the build | nothing |
+| this repository, merged to `main`; the host runs your own image | Dependabot opens a pull request in your repository, within a day | merge it: next row |
+| your own image, merged to its `main` | your CI builds it; the host redeploys within five minutes | nothing |
+| the env note, or a token it references | nothing until the next restart | `make restart` |
+| your settings repository: permissions, `CLAUDE.md`, skills, `config/mcp.json` | pulled at every start of the container | `make restart` |
+| `compose.yaml`, `terraform/ignition.yaml.tftpl`, `orca_image` | nothing: Ignition runs at first boot only | `terraform -chdir=terraform apply -replace=google_compute_instance.vm` |
 
-A redeploy, a restart and a rebuild all end live terminals, and all keep the data disk: checkouts, Tailscale identity, pairing, Docker's images and the volumes of project stacks. To stay on one build, name its `sha-<sha>` tag in `orca_image`: the host then never moves by itself.
+- **Redeploy**: the host sees a new image under the tag it follows and restarts its container on it.
+- **Restart** (`make restart`): the env file rendered again from 1Password, the container restarted, the image pulled.
+- **Rebuild** (`apply -replace`): a new VM, from Ignition.
+
+All three end live terminals, and all three keep the data disk: checkouts, Tailscale identity, pairing, Docker's images and the volumes of project stacks. To stay on one build, name its `sha-<sha>` tag in `orca_image`: the host then never redeploys by itself.
 
 ## Day to day
 
