@@ -123,3 +123,32 @@ systemd:
 
         [Install]
         WantedBy=multi-user.target
+    # A merge to main publishes a new image under the tag this host follows, and nothing on the VM would know.
+    # The check is the redeploy: `/opt/orca/up` is `--pull always`, and compose recreates a container only when
+    # the digest it pulled differs from the running one. A tick with nothing new is a manifest request and no more.
+    # Restarting orca.service rather than calling `up` keeps the environment and the image prune in one place.
+    # This ends live terminals when it does fire, which is the point of following a tag: see architecture.md.
+    - name: orca-update.service
+      contents: |
+        [Unit]
+        Description=orca-host: redeploy when a new image is published under the tag this host follows
+        After=docker.service orca.service
+        Requires=docker.service
+
+        [Service]
+        Type=oneshot
+        ExecStart=/usr/bin/systemctl restart orca.service
+        StandardOutput=journal+console
+        StandardError=journal+console
+    - name: orca-update.timer
+      enabled: true
+      contents: |
+        [Unit]
+        Description=orca-host: check for a new image every 5 minutes
+
+        [Timer]
+        OnBootSec=5min
+        OnUnitActiveSec=5min
+
+        [Install]
+        WantedBy=timers.target

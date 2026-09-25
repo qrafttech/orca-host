@@ -120,8 +120,11 @@ Host <name>
 
 | Change | Action |
 |---|---|
-| a new secret version, a new variable in it, a new image under the same tag | `make restart` |
+| a new image under the same tag | nothing: the host redeploys itself within five minutes |
+| a new secret version, a new variable in it | `make restart` |
 | `compose.yaml`, `terraform/ignition.yaml.tftpl`, `orca_image` | `terraform -chdir=terraform apply -replace=google_compute_instance.vm` |
+
+`orca-update.timer` restarts `orca.service` every five minutes. `/opt/orca/up` is `--pull always`, and compose recreates a container only when the digest it pulled differs from the running one, so a tick with nothing new is a manifest request and no more, and a merge to `main` reaches the host without anyone doing anything. The cost is that a redeploy ends live terminals, and no one chose its moment: a host following a tag takes what the tag serves. A host pinned to `sha-<sha>` in `orca_image` never moves, and the timer then only ever costs the manifest request.
 
 Ignition runs at first boot only, and `compose.yaml` is baked into it. A rebuild keeps the data disk: checkouts, Tailscale identity, pairing, Docker's images and the volumes of project stacks. Only Flatcar is new.
 
