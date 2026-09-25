@@ -4,7 +4,7 @@ A VM that runs `orca serve` headless, one host per person, all of that person's 
 
 ## Rules of this repository
 
-- **English only**, everywhere: README, script comments, commit messages, pull requests. Source material that arrives in French (issue comments, call notes) is translated on the way in.
+- **English only**, everywhere: README, script comments, commit messages, pull requests, issues, and anything an agent writes into GitHub — issue bodies and comments, pull request descriptions, review comments on code. Source material that arrives in French (a pasted message, call notes) is translated on the way in.
 - **The host is generic.** Nothing in `Dockerfile`, `compose.yaml` or `terraform/` knows a project. What a project needs on a worktree (`orca.yaml`, worktree scripts, `.env` files, base images) lives in that project's repository and runs from its setup hook.
 - **Nothing is installed at run time.** The image is a base; a person's own tools are their own image, `FROM` it, built by their own CI and named in `orca_image`. No mechanism here downloads, unpacks or installs software after the build — not even a generic one that names no tool.
 - **What must survive a rebuild is under `/var/lib/orca`**, Docker's data root included. The boot disk is Flatcar and nothing else; it is replaced with the VM. A project's databases are worktree databases: its setup hook creates them, its archive script removes them, nothing migrates them.

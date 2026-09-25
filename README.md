@@ -102,7 +102,7 @@ RUN curl -fsSL -o /tmp/x "<url>" && echo "<sha256>  /tmp/x" | sha256sum -c - \
 orca_image = "ghcr.io/me/orca-host:main"   # terraform.tfvars
 ```
 
-That is an Ignition change, so once: `terraform -chdir=terraform apply -replace=google_compute_instance.vm`. From then on a new build under the same tag is `make restart`, as any other image change.
+That is an Ignition change, so once: `terraform -chdir=terraform apply -replace=google_compute_instance.vm`. From then on a new build under the same tag needs nothing: the host checks the tag every five minutes and redeploys itself when the digest has moved, as for any other image change.
 
 **Keeping up with the base.** Pin the `FROM` to a digest, as above, and let Dependabot watch it — in your repository, `.github/dependabot.yml`:
 
@@ -119,7 +119,7 @@ Every time `main` moves here, you get a pull request bumping that digest, your C
 ## Day to day
 
 ```bash
-make restart   # after editing the env note or rotating a token, or for a new image under the same tag; ends live terminals
+make restart   # after editing the env note or rotating a token, or to take a new image now rather than within five minutes; ends live terminals
 make logs
 make shell     # a shell in the container, as `orca`, the same paths an Orca terminal sees
 make ssh       # a shell on the VM, as `core`
