@@ -30,7 +30,6 @@ CLAUDE_PERMISSION_MODE=auto                 optional, see Claude settings
 CLAUDE_SETTINGS_REPO=me/claude              optional, see Claude settings
 CLAUDE_SETTINGS_FILE=config/settings.json   optional: where settings.json is in that repository
 FOO_TOKEN={{ op://Vault/Item/field }}       anything else reaches the container as is: the `${FOO_TOKEN}` of your MCP servers, what your own tools read
-OP_SERVICE_ACCOUNT_TOKEN={{ op://Vault/orca-host-service-account/credential }}   optional, see Project secrets
 ```
 
 The host renders that note itself, at every boot. Secret Manager holds one line — the token of a 1Password service account, read-only on that one vault — and `make secret` puts it there, once. So a token you rotate in 1Password, or a variable you add to the note, is a `make restart` away; nothing is frozen at the moment it was uploaded. On a laptop, `make env` renders the same note with your own account, into `./env`.
@@ -44,7 +43,7 @@ Needed on the laptop: `docker`, `terraform`, `gcloud`, `op` (1Password CLI), `jq
    <img src="docs/tailscale-tag.png" width="49%" alt="Create tag">
 
 2. **Once per GCP project**: `gcloud auth application-default login` (Terraform's login, separate from `gcloud auth login`), then `make bootstrap` for the state bucket.
-3. **A 1Password vault for the host**, technical: the tokens your agents read, no password data. A service account on it, read-only, its token saved in an item named `orca-host-service-account` — that account is what the host reads the vault with, and the vault is the only thing it can reach.
+3. **A 1Password vault for the host**, technical: the tokens your agents read, no password data. A service account on it, read-only, its token saved in an item named `orca-host-service-account` in your `Private` vault (`OP_TOKEN` to put it elsewhere) — not in the vault it opens: only `make secret` reads it, with your account.
 4. **The two Secure Notes**, in that vault: `orca-host-tfvars` is `terraform/terraform.tfvars.example` filled in; `orca-host` is the env file above. Fine-grained GitHub tokens do not work; the organisation must allow classic ones. The first fetch is the only one that cannot read the vault name from the tfvars: `make OP_VAULT="<vault>" init`.
 
    <img src="docs/tailscale-auth-key.png" width="49%" alt="Generate auth key"> <img src="docs/github-token.png" width="49%" alt="Token scopes">
@@ -68,7 +67,7 @@ Add one from the app: Add a project → Clone from URL, the https URL, parent fo
 
 Everything a project needs is in its repository and runs from its worktree setup hook: `docker compose` on the VM's Docker, `.env` files, base images. What it starts is reachable at `http://<tailnet IP>:<port>`. Deleting a worktree from Orca tears its stack down within 5 minutes, volumes included. Claude Code in a worktree works as on a laptop: the project's own `.claude/` and `CLAUDE.md` apply on top of your settings, hooks run in the container (`ruby`, `python3`, `node` are there), and workspace trust is asked once per project.
 
-**Project secrets.** `op` is in the image. Put `OP_SERVICE_ACCOUNT_TOKEN` in the env note, as above, and a session reads the host's vault itself: a project whose dev `.env` lives in 1Password is brought up by its own setup hook, `op inject -i .env.tpl -o .env`, with no step on a laptop. Weigh it once — that token is in every session's environment, so everything a session runs can read that vault, which is why the vault is technical and read-only. Leave the line out and `op` is there without a credential. In Claude Code's `auto` mode, `op` also needs an allow rule in your settings repository: the permission classifier refuses it as credential materialization.
+**Project secrets.** `op` is in the image, and the host hands its service-account token to every session: a session reads the host's vault itself, so a project whose dev `.env` lives in 1Password is brought up by its own setup hook, `op inject -i .env.tpl -o .env`, with no step on a laptop. That token is in every session's environment, so everything a session runs can read that vault: that is why the vault is technical and read-only. In Claude Code's `auto` mode, `op` also needs an allow rule in your settings repository: the permission classifier refuses it as credential materialization.
 
 ## Claude settings
 

@@ -20,7 +20,8 @@ SECRET   = orca-host-$(NAME)-op-token
 OP_VAULT ?= $(or $(shell sed -n 's/^op_vault *= *"\(.*\)".*/\1/p' $(TFVARS) 2>/dev/null),Private)
 OP        = op://$(OP_VAULT)/orca-host/notesPlain
 OP_TFVARS = op://$(OP_VAULT)/orca-host-tfvars/notesPlain
-OP_TOKEN  = op://$(OP_VAULT)/orca-host-service-account/credential
+# The service account's own token is read here only, with your account: keep it out of the vault it opens.
+OP_TOKEN ?= op://Private/orca-host-service-account/credential
 READ_ENV  = op read "$(OP)" | op inject
 TF      := terraform -chdir=terraform
 # Every rebuild is a new host key, and the tailnet already authenticates the peer: no host-key check for this host.

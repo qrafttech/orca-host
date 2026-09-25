@@ -9,10 +9,9 @@
 #   CLAUDE_CODE_OAUTH_TOKEN  from `claude setup-token`
 #   GH_TOKEN                 classic GitHub token, `repo` + `read:org` — the only GitHub credential on the host
 #   GIT_AUTHOR_NAME / GIT_AUTHOR_EMAIL   git identity, also used as committer
-#   OP_SERVICE_ACCOUNT_TOKEN optional: the token the VM rendered this file with, handed on to the sessions. `op`
-#                            is in the image, so a project whose .env lives in 1Password is set up from a session,
-#                            with no step on a laptop. Every session, and everything it runs, then reads that one
-#                            read-only vault; leave the line out of the note and `op` has no credential here.
+#   OP_SERVICE_ACCOUNT_TOKEN the token the VM rendered this file with, handed on to the sessions (set by the VM's
+#                            unit). `op` is in the image, so a project whose .env lives in 1Password is set up from
+#                            a session. Every session, and everything it runs, reads that one read-only vault.
 #   CLAUDE_PERMISSION_MODE   optional: default | acceptEdits | auto | plan, the permission mode of Claude panes
 #   CLAUDE_SETTINGS_REPO     optional: <owner>/<repo> holding your Claude settings; CLAUDE_SETTINGS_FILE the path
 #                            of settings.json in it. `permissions`, a root CLAUDE.md, .claude/skills and

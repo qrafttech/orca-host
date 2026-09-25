@@ -29,7 +29,7 @@ A VM that runs `orca serve` headless, one host per person, all of that person's 
 | Tailscale tag | admin console, once per tailnet | — |
 | host name, project, zone, SSH key | laptop, into the Secure Note `orca-host-tfvars` | — |
 | the 1Password vault the host reads: technical, the tokens agents use, no password data | 1Password, once | — |
-| a service account on that vault, read-only, and its token in an item | 1Password admin console, once | — |
+| a service account on that vault, read-only, and its token in an item of your `Private` vault | 1Password admin console, once | — |
 | Tailscale auth key | admin console, into the Secure Note | Tailscale API, into the item the note references |
 | Claude token, GitHub token, git identity | laptop, into the Secure Note | — |
 | the tokens your MCP servers and your own tools read | laptop, into the Secure Note, as `{{ op:// }}` references to their own items | — |

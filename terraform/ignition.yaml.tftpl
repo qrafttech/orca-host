@@ -39,7 +39,8 @@ storage:
           # Secret Manager holds one line, a 1Password service-account token. The VM reads it with its own GCP
           # identity, then op reads the note `orca-host` from the vault that token is scoped to and resolves its
           # {{ op:// }} references. Rotate a token in 1Password, restart this unit: that is the whole point.
-          # op runs from its own image — Flatcar installs nothing — and the token stays here, out of the container.
+          # op runs from its own image: Flatcar installs nothing. The token itself goes into the file too, so the
+          # sessions' own `op` reads the same vault.
           # Retries until the secret has a version: `make secret` may come after `make apply`.
           set -eu
           secret="projects/${project}/secrets/orca-host-${name}-op-token/versions/latest"
@@ -64,7 +65,7 @@ storage:
           rendered=$(op read "$note" | op inject)
           [ -n "$rendered" ] || { echo "$note rendered empty: expired token, or an item it cannot read"; exit 1; }
           umask 077
-          printf '%s\n' "$rendered" > /var/lib/orca/env.tmp
+          printf '%s\nOP_SERVICE_ACCOUNT_TOKEN=%s\n' "$rendered" "$OP_SERVICE_ACCOUNT_TOKEN" > /var/lib/orca/env.tmp
           mv /var/lib/orca/env.tmp /var/lib/orca/env
     - path: /opt/orca/up
       mode: 0755
