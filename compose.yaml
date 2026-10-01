@@ -22,6 +22,8 @@
 #   ORCA_IMAGE               the image to run, a full reference: the published base, or your own image built
 #                            FROM it to add your tools (set by the VM's unit)
 #   PAIRING_ADDRESS          only on a laptop, see compose.laptop.yaml
+#   TS2_AUTHKEY              optional, with COMPOSE_PROFILES=tailnet2: auth key of a second tailnet, tagged like
+#                            TS_AUTHKEY. Reached through a SOCKS5 proxy on 127.0.0.1:1055, see tailscale-2 below.
 #   anything else            reaches the orca-host container as is: the `${VAR}` of your config/mcp.json, what
 #                            your own tools read
 
@@ -40,6 +42,27 @@ services:
       TS_USERSPACE: "false"
     volumes:
       - ${ORCA_DATA:-./data}/tailscale:/var/lib/tailscale
+    restart: unless-stopped
+
+  # A second tailnet, for a project whose machines are on a tailnet of their own. Userspace: both tailnets use the
+  # same fd7a:115c:a1e0::/48 range, so the second cannot be an interface. Sessions reach it through its SOCKS5 proxy;
+  # --accept-routes takes its subnet routes, --port=0 keeps it off the first one's UDP port.
+  tailscale-2:
+    image: tailscale/tailscale:v1.102.4
+    container_name: tailscale-2
+    profiles: [tailnet2]
+    network_mode: host
+    environment:
+      TS_AUTHKEY: ${TS2_AUTHKEY:-}
+      TS_AUTH_ONCE: "true"
+      TS_HOSTNAME: ${TS_HOSTNAME:-orca-host}
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_USERSPACE: "true"
+      TS_SOCKS5_SERVER: 127.0.0.1:1055
+      TS_EXTRA_ARGS: --accept-routes
+      TS_TAILSCALED_EXTRA_ARGS: --port=0
+    volumes:
+      - ${ORCA_DATA:-./data}/tailscale-2:/var/lib/tailscale
     restart: unless-stopped
 
   orca-host:

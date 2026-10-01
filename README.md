@@ -30,6 +30,8 @@ CLAUDE_PERMISSION_MODE=auto                 optional, see Claude settings
 CLAUDE_SETTINGS_REPO=me/claude              optional, see Claude settings
 CLAUDE_SETTINGS_FILE=config/settings.json   optional: where settings.json is in that repository
 FOO_TOKEN={{ op://Vault/Item/field }}       anything else reaches the container as is: the `${FOO_TOKEN}` of your MCP servers, what your own tools read
+COMPOSE_PROFILES=tailnet2                   optional, with the next line: a second tailnet, which sessions reach through socks5h://127.0.0.1:1055
+TS2_AUTHKEY=tskey-auth-...                  that tailnet's auth key, made like TS_AUTHKEY, with a tag orca-host created there too
 ```
 
 The host renders that note itself, at every boot. Secret Manager holds one line — the token of a 1Password service account, read-only on that one vault — and `make secret` puts it there, once. So a token you rotate in 1Password, or a variable you add to the note, is a `make restart` away; nothing is frozen at the moment it was uploaded. On a laptop, `make env` renders the same note with your own account, into `./env`.
