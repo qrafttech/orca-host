@@ -1,29 +1,28 @@
 # orca-host stack: Tailscale + Orca, both on the host's network. Everything personal comes from one env file,
-# read twice: by compose for the values below (`:?` = required, `:-` = default), and by the orca-host container
-# as a whole, so a new variable needs no change here.
+# read twice: by compose for the values below (`:-` = default), and by the orca-host container as a whole, so a new
+# variable needs no change here.
 #   ORCA_ENV_FILE=<file> docker compose --env-file <file> up -d
 # The variables below are the contract of a host.
 #
 #   TS_AUTHKEY               Tailscale auth key, tagged, preauthorized, single-use. Only read on the first start;
 #                            the node identity then lives in <ORCA_DATA>/tailscale.
+#   OP_SERVICE_ACCOUNT_TOKEN the token this file was rendered with, appended to it (by the VM's render-env; on a
+#                            laptop by `make env`). Your dotfiles' templates read 1Password with it, and so does every
+#                            session's `op`: everything the container runs reads that one read-only vault.
+#   DOTFILES_REPO            optional: your chezmoi dotfiles, <owner>/<repo> or a URL, applied at every start. What
+#                            they write to ~/.config/orca-host/env.sh reaches every session: see entrypoint.sh.
 #   CLAUDE_CODE_OAUTH_TOKEN  from `claude setup-token`
 #   GH_TOKEN                 classic GitHub token, `repo` + `read:org` — the only GitHub credential on the host
 #   GIT_AUTHOR_NAME / GIT_AUTHOR_EMAIL   git identity, also used as committer
-#   OP_SERVICE_ACCOUNT_TOKEN the token the VM rendered this file with, handed on to the sessions (set by the VM's
-#                            unit). `op` is in the image, so a project whose .env lives in 1Password is set up from
-#                            a session. Every session, and everything it runs, reads that one read-only vault.
+#                            These three: from your dotfiles' env.sh, or lines of this file. Not checked here.
 #   CLAUDE_PERMISSION_MODE   optional: default | acceptEdits | auto | plan, the permission mode of Claude panes
-#   CLAUDE_SETTINGS_REPO     optional: <owner>/<repo> holding your Claude settings; CLAUDE_SETTINGS_FILE the path
-#                            of settings.json in it. `permissions`, a root CLAUDE.md, .claude/skills and
-#                            config/mcp.json are taken. Text only: software goes in your own image, below.
 #   ORCA_ENV_FILE            the env file itself, for the orca-host container (set by the VM's unit)
 #   TS_HOSTNAME              the host's name on the tailnet (set by the VM's unit)
 #   ORCA_DATA                where state lives on the host: home/ and tailscale/ (set by the VM's unit)
 #   ORCA_IMAGE               the image to run, a full reference: the published base, or your own image built
 #                            FROM it to add your tools (set by the VM's unit)
 #   PAIRING_ADDRESS          only on a laptop, see compose.laptop.yaml
-#   anything else            reaches the orca-host container as is: the `${VAR}` of your config/mcp.json, what
-#                            your own tools read
+#   anything else            reaches the orca-host container as is
 
 services:
   tailscale:
@@ -49,13 +48,6 @@ services:
     init: true
     depends_on: [tailscale]
     env_file: ${ORCA_ENV_FILE:-env}
-    environment:
-      CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:?}
-      GH_TOKEN: ${GH_TOKEN:?}
-      GIT_AUTHOR_NAME: ${GIT_AUTHOR_NAME:?}
-      GIT_AUTHOR_EMAIL: ${GIT_AUTHOR_EMAIL:?}
-      GIT_COMMITTER_NAME: ${GIT_AUTHOR_NAME:?}
-      GIT_COMMITTER_EMAIL: ${GIT_AUTHOR_EMAIL:?}
     volumes:
       # same path inside and outside: a project's compose file may bind-mount /home/orca/<project>/...
       - ${ORCA_DATA:-./data}/home:/home/orca

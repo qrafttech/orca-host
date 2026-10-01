@@ -38,8 +38,9 @@ ORCA_IMAGE ?= orca-host:dev
 env secret: SHELL := /bin/bash
 env secret: .SHELLFLAGS := -o pipefail -c
 
+# The service-account token goes in too, as the VM's render-env does: the container's dotfiles read 1Password with it.
 env:                ## the env file, into ./env
-	$(READ_ENV) > $@ && chmod 600 $@
+	token=$$(op read "$(OP_TOKEN)" | tr -d '\r\n') && { $(READ_ENV); echo "OP_SERVICE_ACCOUNT_TOKEN=$$token"; } > $@ && chmod 600 $@
 
 $(TFVARS):          ## the host's name, project, zone, SSH key, into terraform/terraform.tfvars
 	op read "$(OP_TFVARS)" > $@
@@ -107,8 +108,9 @@ restart:            ## re-render the env file from 1Password, re-run the stack. 
 logs:
 	$(SSH) core@$(NAME) docker logs -f --tail 100 orca-host
 
-shell:              ## a shell in the Orca container, as `orca`, the same paths an Orca terminal sees
-	$(SSH) -t core@$(NAME) docker exec -it -u orca orca-host bash
+# `docker exec` gets the container's environment, not what the entrypoint added from your dotfiles: sourced again.
+shell:              ## a shell in the Orca container, as `orca`, the same paths and variables an Orca terminal sees
+	$(SSH) -t core@$(NAME) docker exec -it -u orca orca-host bash -c "'set -a; [ ! -f ~/.config/orca-host/env.sh ] || . ~/.config/orca-host/env.sh; set +a; exec bash'"
 
 ssh:                ## a shell on the VM itself, as `core`
 	$(SSH) core@$(NAME)

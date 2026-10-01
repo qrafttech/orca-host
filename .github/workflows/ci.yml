@@ -49,18 +49,24 @@ jobs:
           tags: ${{ env.IMAGE }}:smoke
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      - name: smoke test — the ready contract, as upstream tests it, and a deleted worktree's stack torn down
+      - name: smoke test — the ready contract, as upstream tests it, a deleted worktree's stack torn down, dotfiles applied
         run: |
+          # dotfiles whose env.sh must reach orca serve; the repository is the runner's, so git is told it is safe
+          mkdir -p dotfiles/dot_config/orca-host && echo 'export SMOKE_DOTFILES=ok' > dotfiles/dot_config/orca-host/env.sh
+          git -C dotfiles init -q -b main && git -C dotfiles add -A && git -C dotfiles -c user.name=ci -c user.email=ci@ci commit -qm smoke
           # a compose stack started from a directory under /home/orca that no longer exists: gone once the server is up
           sudo install -d -o "$USER" /home/orca/ghost
           printf 'services:\n  s: {image: alpine:3.20, command: sleep infinity, stop_grace_period: 1s, volumes: [data:/data]}\nvolumes:\n  data:\n' > /home/orca/ghost/compose.yaml
           docker compose -f /home/orca/ghost/compose.yaml up -d && sudo rm -rf /home/orca/ghost
-          docker run -d --name smoke -e PAIRING_ADDRESS=127.0.0.1 -v /var/run/docker.sock:/var/run/docker.sock ${{ env.IMAGE }}:smoke
+          docker run -d --name smoke -e PAIRING_ADDRESS=127.0.0.1 -v /var/run/docker.sock:/var/run/docker.sock \
+            -e DOTFILES_REPO=file:///dotfiles -v "$PWD/dotfiles:/dotfiles:ro" \
+            -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0='*' ${{ env.IMAGE }}:smoke
           for i in $(seq 1 24); do
             sleep 5
             if docker logs smoke 2>/dev/null | jq -Rr 'fromjson? | select(.type=="orca_server_ready" and .schemaVersion==1) | .type' | grep -q .; then
               echo "ready after $((i*5))s"; docker exec -u orca smoke docker version --format 'docker {{.Server.Version}} from the container'
               docker logs smoke 2>&1 | grep '^prune-stacks: ghost torn down'
+              docker exec -u orca smoke sh -c 'tr "\0" "\n" < /proc/$(pgrep -o -f "serve --port")/environ' | grep '^SMOKE_DOTFILES=ok$'
               left=$(docker ps -a --filter label=com.docker.compose.project=ghost --format '{{.Names}}'; docker volume ls --filter label=com.docker.compose.project=ghost --format '{{.Name}}')
               [ -z "$left" ] || { echo "ghost stack left behind: $left"; exit 1; }
               exit 0

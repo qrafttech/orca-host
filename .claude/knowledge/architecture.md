@@ -22,7 +22,7 @@ laptop / phone ──tailnet──▶ VM (Flatcar Container Linux, Ignition)
 | | Runs | Installed |
 |---|---|---|
 | The VM | Docker, two containers (`tailscale`, `orca-host`), and at every boot a transient `op` one that renders the env file | nothing else |
-| The `orca-host` container | `orca serve`, every Claude pane, every Orca terminal, a project's Claude Code hooks, `prune-stacks` every 5 minutes | `claude`, `gh`, `git`, the Docker CLI, `op`, `ruby`, `python3`, `node` |
+| The `orca-host` container | `orca serve`, every Claude pane, every Orca terminal, a project's Claude Code hooks, `prune-stacks` every 5 minutes, `chezmoi` at every start | `claude`, `gh`, `git`, the Docker CLI, `op`, `chezmoi`, `ruby`, `python3`, `node` |
 | A project's containers | the app, its database, its cache: a worktree's stack | the app's runtime, at its version, from the project's compose |
 
 Beside, not inside: the `orca-host` container has the VM's Docker socket, so a `docker compose up` from an Orca terminal creates the project's containers on the VM's Docker, as siblings of `orca-host`. Same path everywhere: on the VM, `/home/orca` is a symlink to `/var/lib/orca/home`, which the container mounts at `/home/orca`, so a project's `./:/app` bind mount names the same files on both sides.
@@ -35,19 +35,21 @@ Beside, not inside: the `orca-host` container has the VM's Docker socket, so a `
 - Claude Code as the native binary, checksum-verified against the release manifest. `DISABLE_AUTOUPDATER=1`: the image is the version.
 - `gh`, `git`, the Docker CLI with the compose plugin. `git` authenticates to GitHub through `gh` (a `credential.helper` in the image), so `GH_TOKEN` is the only GitHub credential: no SSH key, no `gh auth login`.
 - `op`, the 1Password CLI, the static binary from the official image. The host's secrets *are* 1Password items — the VM renders the env file with the same CLI, from its own image, before this one is pulled — so `op` is infrastructure here, like `gh`, not somebody's tool. What it can read is the env file's business, below.
+- `chezmoi`, the release tarball, checksum-verified against the release's list. It applies the person's dotfiles at every start, below: like `op`, infrastructure, not somebody's tool.
 - `ruby`, `python3`, `node`: a project's Claude Code hooks run next to `claude`, not in the project's containers. The app's own runtime, at its own version, lives in those.
 - Versions are build args at the top of the `Dockerfile`. Orca is pinned to the desktop client's version (protocol compatibility). A bump is a PR that says why.
 - It names no tool beyond those. What one person wants installed is not in this repository at all: see below.
 
-**What is personal, and where.** Software is an image of the person's own, below. Text (permissions, `CLAUDE.md`, skills, `config/mcp.json`) is the settings repository, pulled at every start, because a permission should not need a rebuild. Secrets are the env file, because an image must never carry one. Three kinds, three mechanisms, no overlap.
+**What is personal, and where.** Software is an image of the person's own, below. Tokens and text (permissions, `CLAUDE.md`, skills, MCP servers) are the person's chezmoi dotfiles, applied at every start, because a token or a permission should not need a rebuild and an image must never carry a secret. The env note keeps what must exist before the container does — the Tailscale auth key — and the dotfiles' name. The dotfiles read their tokens from the same vault with the token the host already holds, so the laptop and the host read one list of references, not two copies of it.
 
 The entrypoint starts as root, gives `orca` the Docker socket's group and its home (a volume: empty and root-owned the first time), then re-executes as `orca`:
 
 1. Seeds `~/.claude.json` with Claude Code's first-run answers (onboarding, theme, bypass-permissions acceptance). Merged at every start: Claude rewrites the file.
-2. Applies the Claude preferences, see [claude-settings.md](claude-settings.md).
-3. Starts the `prune-stacks` loop in the background, every 5 minutes, for as long as the container runs.
-4. Waits for `tailscale0`, unless `PAIRING_ADDRESS` is given.
-5. `exec orca serve --port 6768 --pairing-address <IP> [--mobile-pairing] --json`.
+2. Applies the dotfiles (`DOTFILES_REPO`): `git pull --ff-only`, then `chezmoi init --apply`; sources `~/.config/orca-host/env.sh` if they wrote one; `GIT_COMMITTER_*` default to `GIT_AUTHOR_*`. A failure keeps what the last apply wrote. See [claude-settings.md](claude-settings.md).
+3. Writes `CLAUDE_PERMISSION_MODE` into `~/.claude/settings.json`.
+4. Starts the `prune-stacks` loop in the background, every 5 minutes, for as long as the container runs.
+5. Waits for `tailscale0`, unless `PAIRING_ADDRESS` is given.
+6. `exec orca serve --port 6768 --pairing-address <IP> [--mobile-pairing] --json`.
 
 ### Your own image
 
@@ -55,7 +57,7 @@ The host installs nothing at run time. A person's binaries and MCP servers are a
 
 Why not a boot-time installer — the entrypoint reading a list of declared URLs and checksums and fetching them into `~/bin` on the volume, which is the obvious alternative and the wrong one:
 
-- **Reproducible.** A `docker build` from a digest-pinned base gives the same image whoever runs it; a volume gives whatever it already held. Two hosts on the same image and the same settings repository could differ.
+- **Reproducible.** A `docker build` from a digest-pinned base gives the same image whoever runs it; a volume gives whatever it already held. Two hosts on the same image and the same dotfiles could differ.
 - **Auditable.** `docker history` and a tag say what is installed. A volume only says it by being read.
 - **Pinned in time.** The digest in the `FROM` and the checksums in the `RUN` are fixed when the build runs, not re-resolved against a release page months later.
 - **No package format to maintain.** Each new release shape (a bare binary, a `.tar.gz`, a `.zip`, a nested path) was a special case in shell. `RUN` is the whole vocabulary, and it is Docker's, not ours.
@@ -65,7 +67,7 @@ The cost is a rebuild for a new tool instead of a restart, and a derived image g
 
 ### CI
 
-`.github/workflows/ci.yml`, on every push: lint (hadolint, shellcheck, `terraform fmt` and `validate`), build amd64, smoke-test the ready contract (an `orca_server_ready` line with `schemaVersion: 1`, then `docker version` from inside the container) and `prune-stacks` (a compose stack started from a `/home/orca` directory that no longer exists is gone by the time the server is ready), then push the multi-arch image as `<branch>` and `sha-<sha>`. The `main` tag moves; a host pinned to a build names the sha tag, or a digest, in `orca_image`. Those tags are also the contract of a derived image: its `FROM` names one of them.
+`.github/workflows/ci.yml`, on every push: lint (hadolint, shellcheck, `terraform fmt` and `validate`), build amd64, smoke-test the ready contract (an `orca_server_ready` line with `schemaVersion: 1`, then `docker version` from inside the container), `prune-stacks` (a compose stack started from a `/home/orca` directory that no longer exists is gone by the time the server is ready) and the dotfiles (a local repository's `env.sh` variable is in `orca serve`'s environment), then push the multi-arch image as `<branch>` and `sha-<sha>`. The `main` tag moves; a host pinned to a build names the sha tag, or a digest, in `orca_image`. Those tags are also the contract of a derived image: its `FROM` names one of them.
 
 ## The stack
 
@@ -100,11 +102,11 @@ The chain is the VM's GCP identity → one secret → one token → one vault, r
 
 What this buys is rotation. A token changed in 1Password reaches the host with `make restart`; a new variable is a line in the note and the same restart. Nothing is frozen at the moment it was uploaded, and the laptop is out of the loop — `make env` resolves the same note, with the person's own account, for a stack run there. The service-account token itself expires: renewing it is the one secret placed by hand, a new token in the item then `make secret`. Until that is done the host does not come up — `orca-env.service` fails rather than start the stack on the env file it rendered last time, and says so on the serial console. Restarting the two units is the way back.
 
-**The token in a session.** `op` is in the image, and `render-env` appends `OP_SERVICE_ACCOUNT_TOKEN` to the file it writes: the sessions read the same read-only vault, with the token the VM already holds rather than a copy the note would read back from the vault. A project whose `.env` lives in 1Password is then brought up by its own worktree setup hook — `op inject -i .env.tpl -o .env` — with no step on a laptop, and a tool a session is asked to set up can fetch its own credential.
+**The token in the container.** `op` and `chezmoi` are in the image, and `render-env` appends `OP_SERVICE_ACCOUNT_TOKEN` to the file it writes: the dotfiles' templates and the sessions read the same read-only vault, with the token the VM already holds rather than a copy the note would read back from the vault. That is what lets the note shrink to the Tailscale key: every other token is a reference in the dotfiles, resolved in the container. A project whose `.env` lives in 1Password is then brought up by its own worktree setup hook — `op inject -i .env.tpl -o .env` — with no step on a laptop, and a tool a session is asked to set up can fetch its own credential.
 
-The cost is plain: every session, and everything a session runs, reads that vault. It is bounded by what is in the vault, which is the reason the vault is technical, read-only and separate. The same env file already carries `GH_TOKEN` and `CLAUDE_CODE_OAUTH_TOKEN` into every session, so this adds credentials of the same order next to those, not a new kind of exposure — the judgement to make is what goes in the vault, not whether the file has secrets in it.
+The cost is plain: every session, and everything a session runs, reads that vault. It is bounded by what is in the vault, which is the reason the vault is technical, read-only and separate. `GH_TOKEN` and `CLAUDE_CODE_OAUTH_TOKEN` are in every session's environment already, so this adds credentials of the same order next to those, not a new kind of exposure — the judgement to make is what goes in the vault, not whether the file has secrets in it.
 
-Claude Code's own permission classifier refuses `op` in `auto` mode, as credential materialization. It takes an allow rule in the settings repository for a session to use it there.
+Claude Code's own permission classifier refuses `op` in `auto` mode, as credential materialization. It takes an allow rule in the person's Claude settings for a session to use it there.
 
 **Disks.** Two, with different fates:
 
@@ -132,7 +134,7 @@ Host <name>
 | Change | Action |
 |---|---|
 | a new image under the same tag | nothing: the host redeploys itself within five minutes |
-| a token rotated in 1Password, a new variable in the env note, a new secret version | `make restart` |
+| a token rotated in 1Password, a new variable in the env note, a push to the dotfiles, a new secret version | `make restart` |
 | `compose.yaml`, `terraform/ignition.yaml.tftpl`, `orca_image` | `terraform -chdir=terraform apply -replace=google_compute_instance.vm` |
 
 `orca-update.timer` restarts `orca.service` every five minutes. `/opt/orca/up` is `--pull always`, and compose recreates a container only when the digest it pulled differs from the running one, so a tick with nothing new is a manifest request and no more, and a merge to `main` reaches the host without anyone doing anything. The cost is that a redeploy ends live terminals, and no one chose its moment: a host following a tag takes what the tag serves. A host pinned to `sha-<sha>` in `orca_image` never moves, and the timer then only ever costs the manifest request.
