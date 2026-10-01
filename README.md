@@ -28,6 +28,7 @@ GIT_AUTHOR_NAME=...
 GIT_AUTHOR_EMAIL=...
 CLAUDE_PERMISSION_MODE=auto                 optional, see Claude settings
 CLAUDE_SETTINGS_REPO=me/claude              optional, see Claude settings
+ENV_TEMPLATE=me/dotfiles/env.tpl            optional, see Your environment
 CLAUDE_SETTINGS_FILE=config/settings.json   optional: where settings.json is in that repository
 FOO_TOKEN={{ op://Vault/Item/field }}       anything else reaches the container as is: the `${FOO_TOKEN}` of your MCP servers, what your own tools read
 ```
@@ -68,6 +69,21 @@ Add one from the app: Add a project → Clone from URL, the https URL, parent fo
 Everything a project needs is in its repository and runs from its worktree setup hook: `docker compose` on the VM's Docker, `.env` files, base images. What it starts is reachable at `http://<tailnet IP>:<port>`. Deleting a worktree from Orca tears its stack down within 5 minutes, volumes included. Claude Code in a worktree works as on a laptop: the project's own `.claude/` and `CLAUDE.md` apply on top of your settings, hooks run in the container (`ruby`, `python3`, `node` are there), and workspace trust is asked once per project.
 
 **Project secrets.** `op` is in the image, and the host hands its service-account token to every session: a session reads the host's vault itself, so a project whose dev `.env` lives in 1Password is brought up by its own setup hook, `op inject -i .env.tpl -o .env`, with no step on a laptop. That token is in every session's environment, so everything a session runs can read that vault: that is why the vault is technical and read-only. In Claude Code's `auto` mode, `op` also needs an allow rule in your settings repository: the permission classifier refuses it as credential materialization.
+
+## Your environment
+
+`ENV_TEMPLATE`, optional: `<owner>/<repo>/<path>` of a file of 1Password secret references, one line per variable:
+
+```sh
+export NOTION_TOKEN="{{ op://My Vault/notion/api_key }}"
+export TOGGL_API_TOKEN="{{ op://My Vault/toggl/api_token }}"
+```
+
+At every start the host fetches it with `GH_TOKEN`, resolves it with `op inject` and its service-account token, writes `~/.config/orca-host/env.sh` (0600) and sources it before `orca serve`: every Claude pane, MCP server (the `${VAR}` of `config/mcp.json`), terminal and CLI sees the variables. A failed fetch or inject keeps the last `env.sh`. The references must point at the host's vault, the one its service account reads.
+
+The file holds no secret, so it can live in git next to your dotfiles, and a laptop can resolve the same file into its shell (`op inject -i env.tpl`, or a chezmoi `output`): the list is written once. Adding a variable: a line, a `git push`, `make restart`. `op inject` reads every `op://` in the file, comments included.
+
+The env note keeps what the host needs before the template can be read: `TS_AUTHKEY`, `GH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`, the git identity.
 
 ## Claude settings
 

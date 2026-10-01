@@ -26,6 +26,6 @@ The same shape as any `.mcp.json`, HTTP or stdio:
 }
 ```
 
-Claude Code expands `${VAR}` in `url`, `headers`, `env` and `args` from the environment it runs in, which on the host is the env file: a token is one line there and one `${VAR}` here, and a server that takes its key in a header needs no OAuth. At start Claude warns which variables are missing; `claude mcp list` shows the same. A server that only offers OAuth needs its browser flow once per host, by hand.
+Claude Code expands `${VAR}` in `url`, `headers`, `env` and `args` from the environment it runs in, which on the host is the env file plus `ENV_TEMPLATE` (README, "Your environment"): a token is one line there and one `${VAR}` here, and a server that takes its key in a header needs no OAuth. At start Claude warns which variables are missing; `claude mcp list` shows the same. A server that only offers OAuth needs its browser flow once per host, by hand.
 
 Commit, push, and `make restart`: the repository is pulled at every start. Setting `CLAUDE_SETTINGS_REPO` for the first time is a new secret version: `make secret`, then `make restart`.
