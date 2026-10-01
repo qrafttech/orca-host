@@ -28,7 +28,7 @@ GIT_AUTHOR_NAME=...
 GIT_AUTHOR_EMAIL=...
 CLAUDE_PERMISSION_MODE=auto                 optional, see Claude settings
 CLAUDE_SETTINGS_REPO=me/claude              optional, see Claude settings
-ENV_TEMPLATE=me/dotfiles/env.tpl            optional, see Your environment
+ENV_TEMPLATE=me/dotfiles/env.tpl            optional, or a file: see Your environment
 CLAUDE_SETTINGS_FILE=config/settings.json   optional: where settings.json is in that repository
 FOO_TOKEN={{ op://Vault/Item/field }}       anything else reaches the container as is: the `${FOO_TOKEN}` of your MCP servers, what your own tools read
 ```
@@ -72,14 +72,22 @@ Everything a project needs is in its repository and runs from its worktree setup
 
 ## Your environment
 
-`ENV_TEMPLATE`, optional: `<owner>/<repo>/<path>` of a file of 1Password secret references, one line per variable:
+A file of 1Password secret references, one line per variable:
 
 ```sh
 export NOTION_TOKEN="{{ op://My Vault/notion/api_key }}"
 export TOGGL_API_TOKEN="{{ op://My Vault/toggl/api_token }}"
 ```
 
-At every start the host fetches it with `GH_TOKEN`, resolves it with `op inject` and its service-account token, writes `~/.config/orca-host/env.sh` (0600) and sources it before `orca serve`: every Claude pane, MCP server (the `${VAR}` of `config/mcp.json`), terminal and CLI sees the variables. A failed fetch or inject keeps the last `env.sh`. The references must point at the host's vault, the one its service account reads.
+Where the host reads it, `ENV_TEMPLATE`:
+
+| `ENV_TEMPLATE` | The file |
+|---|---|
+| `<owner>/<repo>/<path>` | in a GitHub repository, fetched with `GH_TOKEN` |
+| `/an/absolute/path` | in the container: `COPY`'d into your own image, or on the data disk |
+| unset | `~/.config/orca-host/env.tpl` if it exists (`make shell`, then write it), else nothing |
+
+At every start the host reads it, resolves it with `op inject` and its service-account token, writes `~/.config/orca-host/env.sh` (0600) and sources it before `orca serve`: every Claude pane, MCP server (the `${VAR}` of `config/mcp.json`), terminal and CLI sees the variables. A failed read or inject keeps the last `env.sh`. The references must point at the host's vault, the one its service account reads.
 
 The file holds no secret, so it can live in git next to your dotfiles, and a laptop can resolve the same file into its shell (`op inject -i env.tpl`, or a chezmoi `output`): the list is written once. Adding a variable: a line, a `git push`, `make restart`. `op inject` reads every `op://` in the file, comments included.
 

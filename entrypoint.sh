@@ -59,19 +59,27 @@ if [ -n "${CLAUDE_SETTINGS_REPO:-}" ]; then
   fi
 fi
 
-# Your environment, optional: ENV_TEMPLATE, <owner>/<repo>/<path> of a file of 1Password secret references, one
-# `export FOO="{{ op://Vault/Item/field }}"` per variable. Fetched with GH_TOKEN and resolved by `op inject` at
-# every start, then sourced before `orca serve`: every Claude pane, MCP server, terminal and CLI sees its
-# variables. The same file a laptop resolves into its shell. A failed fetch or inject keeps the last env.sh.
+# Your environment: a file of 1Password secret references, one `export FOO="{{ op://Vault/Item/field }}"` per
+# variable, resolved by `op inject` at every start, then sourced before `orca serve`: every Claude pane, MCP server,
+# terminal and CLI sees its variables. ENV_TEMPLATE names it: <owner>/<repo>/<path>, fetched with GH_TOKEN, or an
+# absolute path in the container (your image, the home). Unset: ~/.config/orca-host/env.tpl, if there is one. A
+# failed fetch or inject keeps the last env.sh.
 env_sh=.config/orca-host/env.sh
-if [ -n "${ENV_TEMPLATE:-}" ]; then
-  IFS=/ read -r owner name path <<< "$ENV_TEMPLATE"
+tpl_src=${ENV_TEMPLATE:-$HOME/.config/orca-host/env.tpl}
+if [[ $tpl_src == /* ]]; then
+  fetch=()
+  if [ -f "$tpl_src" ]; then fetch=(cat "$tpl_src")
+  elif [ -n "${ENV_TEMPLATE:-}" ]; then echo "env template: $tpl_src not found, keeping the last env.sh"; fi
+else
+  IFS=/ read -r owner name path <<< "$tpl_src"
+  fetch=(gh api "repos/$owner/$name/contents/$path" -H 'Accept: application/vnd.github.raw')
+fi
+if [ ${#fetch[@]} -gt 0 ]; then
   mkdir -p "${env_sh%/*}"
-  if tpl=$(gh api "repos/$owner/$name/contents/$path" -H 'Accept: application/vnd.github.raw') \
-     && (umask 077; printf '%s\n' "$tpl" | op inject > "$env_sh.tmp"); then
+  if tpl=$("${fetch[@]}") && (umask 077; printf '%s\n' "$tpl" | op inject > "$env_sh.tmp"); then
     mv "$env_sh.tmp" "$env_sh"
   else
-    rm -f "$env_sh.tmp"; echo "env template: fetch or inject failed, keeping the last env.sh"
+    rm -f "$env_sh.tmp"; echo "env template: reading or resolving $tpl_src failed, keeping the last env.sh"
   fi
 fi
 if [ -f "$env_sh" ]; then
