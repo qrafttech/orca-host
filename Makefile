@@ -107,8 +107,9 @@ restart:            ## re-render the env file from 1Password, re-run the stack. 
 logs:
 	$(SSH) core@$(NAME) docker logs -f --tail 100 orca-host
 
+# `docker exec` gets the container's environment, not what the entrypoint added from ENV_TEMPLATE: sourced again.
 shell:              ## a shell in the Orca container, as `orca`, the same paths an Orca terminal sees
-	$(SSH) -t core@$(NAME) docker exec -it -u orca orca-host bash
+	$(SSH) -t core@$(NAME) docker exec -it -u orca orca-host bash -c "'set -a; [ ! -f ~/.config/orca-host/env.sh ] || . ~/.config/orca-host/env.sh; set +a; exec bash'"
 
 ssh:                ## a shell on the VM itself, as `core`
 	$(SSH) core@$(NAME)

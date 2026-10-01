@@ -16,6 +16,9 @@
 #   CLAUDE_SETTINGS_REPO     optional: <owner>/<repo> holding your Claude settings; CLAUDE_SETTINGS_FILE the path
 #                            of settings.json in it. `permissions`, a root CLAUDE.md, .claude/skills and
 #                            config/mcp.json are taken. Text only: software goes in your own image, below.
+#   ENV_TEMPLATE             optional: a file of 1Password secret references, <owner>/<repo>/<path> or an absolute
+#                            path in the container (default ~/.config/orca-host/env.tpl, if there is one), resolved
+#                            with OP_SERVICE_ACCOUNT_TOKEN at every start and exported to every session
 #   ORCA_ENV_FILE            the env file itself, for the orca-host container (set by the VM's unit)
 #   TS_HOSTNAME              the host's name on the tailnet (set by the VM's unit)
 #   ORCA_DATA                where state lives on the host: home/ and tailscale/ (set by the VM's unit)

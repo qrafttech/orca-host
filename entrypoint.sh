@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # orca-host entrypoint. Starts as root: gives `orca` the Docker socket's group and its home, then re-executes
-# as `orca` and runs `orca serve`. Environment: PAIRING_ADDRESS (optional: default is the tailscale0 address,
-# waited for), ORCA_PORT (6768), ORCA_PAIRING (desktop | mobile).
+# as `orca` and runs `orca serve`. Environment: ENV_TEMPLATE (optional), PAIRING_ADDRESS (optional: default is
+# the tailscale0 address, waited for), ORCA_PORT (6768), ORCA_PAIRING (desktop | mobile).
 # shellcheck disable=SC2016  # $m, $s below are jq variables
 set -euo pipefail
 
@@ -57,6 +57,35 @@ if [ -n "${CLAUDE_SETTINGS_REPO:-}" ]; then
     jq --slurpfile m "$mcpfile" '.mcpServers = (($m[0].mcpServers // {}) + (.mcpServers // {}))' \
       .claude.json > .claude.json.tmp && mv .claude.json.tmp .claude.json
   fi
+fi
+
+# Your environment: a file of 1Password secret references, one `export FOO="{{ op://Vault/Item/field }}"` per
+# variable, resolved by `op inject` at every start, then sourced before `orca serve`: every Claude pane, MCP server,
+# terminal and CLI sees its variables. ENV_TEMPLATE names it: <owner>/<repo>/<path>, fetched with GH_TOKEN, or an
+# absolute path in the container (your image, the home). Unset: ~/.config/orca-host/env.tpl, if there is one. A
+# failed fetch or inject keeps the last env.sh.
+env_sh=.config/orca-host/env.sh
+tpl_src=${ENV_TEMPLATE:-$HOME/.config/orca-host/env.tpl}
+if [[ $tpl_src == /* ]]; then
+  fetch=()
+  if [ -f "$tpl_src" ]; then fetch=(cat "$tpl_src")
+  elif [ -n "${ENV_TEMPLATE:-}" ]; then echo "env template: $tpl_src not found, keeping the last env.sh"; fi
+else
+  IFS=/ read -r owner name path <<< "$tpl_src"
+  fetch=(gh api "repos/$owner/$name/contents/$path" -H 'Accept: application/vnd.github.raw')
+fi
+if [ ${#fetch[@]} -gt 0 ]; then
+  mkdir -p "${env_sh%/*}"
+  if tpl=$("${fetch[@]}") && (umask 077; printf '%s\n' "$tpl" | op inject > "$env_sh.tmp"); then
+    mv "$env_sh.tmp" "$env_sh"
+  else
+    rm -f "$env_sh.tmp"; echo "env template: reading or resolving $tpl_src failed, keeping the last env.sh"
+  fi
+fi
+if [ -f "$env_sh" ]; then
+  # shellcheck source=/dev/null
+  { set -a +u; . "$env_sh"; } || echo "env template: env.sh failed, starting with what it set"
+  set +a -u
 fi
 
 # The stacks of deleted worktrees, torn down within 5 minutes, volumes included: see prune-stacks. Orca does not
