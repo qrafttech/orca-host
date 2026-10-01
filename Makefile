@@ -101,8 +101,10 @@ pair-mobile:        ## restart the server on its mobile link, show it as a QR fo
 	  read -r _ || { echo; echo "no terminal to wait on: scan it, then \`make restart\`"; exit 1; }
 	$(SSH) core@$(NAME) sudo systemctl restart orca-env orca
 
-restart:            ## re-render the env file from 1Password, re-run the stack. Ends live terminals.
-	$(SSH) core@$(NAME) sudo systemctl restart orca-env orca
+# compose recreates the container only when its image or its env file changed: a push to ENV_TEMPLATE or the
+# settings repository changes neither, so the container is restarted as well, and its entrypoint runs again.
+restart:            ## re-render the env file from 1Password, re-run the stack and the entrypoint. Ends live terminals.
+	$(SSH) core@$(NAME) 'sudo systemctl restart orca-env orca && docker restart orca-host'
 
 logs:
 	$(SSH) core@$(NAME) docker logs -f --tail 100 orca-host
