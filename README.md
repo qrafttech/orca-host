@@ -151,7 +151,7 @@ Every time `main` moves here, you get a pull request bumping that digest, your C
 | `compose.yaml`, `terraform/ignition.yaml.tftpl`, `orca_image` | nothing: Ignition runs at first boot only | `terraform -chdir=terraform apply -replace=google_compute_instance.vm` |
 
 - **Redeploy**: the host sees a new image under the tag it follows and restarts its container on it.
-- **Restart** (`make restart`): the env file rendered again from 1Password, the container restarted, the image pulled.
+- **Restart** (`make restart`): the env file rendered again from 1Password, the image pulled, the container restarted even when neither changed, so the entrypoint reads `ENV_TEMPLATE` and the settings repository again.
 - **Rebuild** (`apply -replace`): a new VM, from Ignition.
 
 All three end live terminals, and all three keep the data disk: checkouts, Tailscale identity, pairing, Docker's images and the volumes of project stacks. To stay on one build, name its `sha-<sha>` tag in `orca_image`: the host then never redeploys by itself.
