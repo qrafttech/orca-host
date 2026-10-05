@@ -72,6 +72,7 @@ The cost is a rebuild for a new tool instead of a restart, and a derived image g
 `compose.yaml` is the whole contract of a host: every personal value is a variable, listed at the top of the file, from one env file. The file is read twice: by compose for the declared variables, and by the `orca-host` container as a whole (`env_file`), so a new variable needs no compose change.
 
 - `tailscale`: host network, `NET_ADMIN`, `/dev/net/tun`. `TS_AUTHKEY` is read on the first start only (`TS_AUTH_ONCE`); the node identity then lives in `<ORCA_DATA>/tailscale`, so the host keeps its tailnet IP across rebuilds.
+- `tailscale-2`, only with `COMPOSE_PROFILES=tailnet2`: a second tailnet, for a project whose machines live on a tailnet of their own. A node belongs to one tailnet, and two tailnets share the `fd7a:115c:a1e0::/48` range, so this one runs in userspace: no interface, a SOCKS5 proxy on `127.0.0.1:1055` that sessions point their tools at. `--accept-routes` takes that tailnet's subnet routes. Its identity lives in `<ORCA_DATA>/tailscale-2`.
 - `orca-host`: host network, `init: true`. `/home/orca` is bind-mounted from `<ORCA_DATA>/home` at the same path, so a project's compose file can bind-mount `/home/orca/<project>/...`. The Docker socket is mounted: project stacks are sibling containers on the VM's Docker.
 
 Stopping the stack ends live terminals, as a service restart does.
