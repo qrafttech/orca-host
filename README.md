@@ -156,6 +156,14 @@ Every time `main` moves here, you get a pull request bumping that digest, your C
 
 All three end live terminals, and all three keep the data disk: checkouts, Tailscale identity, pairing, Docker's images and the volumes of project stacks. To stay on one build, name its `sha-<sha>` tag in `orca_image`: the host then never redeploys by itself.
 
+### Logins a host keeps
+
+Some tools do not read a variable: they need an interactive login, once per host. MCP servers that only offer OAuth (their browser flow, from a Claude pane), CLIs that keep tokens in a keyring (`gog`, `gcloud`, …). What they write lives in the home, on the data disk: it survives a restart, a redeploy and a rebuild, and is lost only with the disk.
+
+- A keyring that wants a password reads it from the environment: a line of your `ENV_TEMPLATE`. There is no OS keychain in the container, so a CLI with a choice takes its file backend.
+- A setup that is more than one command belongs in your settings repository, as a script you run from `make shell`: idempotent, so a second run only does what is missing.
+- What that script reads from 1Password (an OAuth client's JSON, say) goes into the host's vault from your own account: the service account is read-only. On a laptop where `OP_SERVICE_ACCOUNT_TOKEN` is set, `env -u OP_SERVICE_ACCOUNT_TOKEN op document create <file> --title <name> --vault <vault>`.
+
 ## Day to day
 
 ```bash
