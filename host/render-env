@@ -1,0 +1,37 @@
+#!/bin/sh
+# Runs on a Debian host, as root, from orca-env.service: writes /var/lib/orca/env, the file the stack starts from,
+# before any container exists. Needs Docker, and ORCA_IMAGE from /opt/orca/host.env.
+# The template is .env.tpl, `VAR=value` per line, a secret as a {{ op:// }} reference: first the image's
+# /etc/orca-host/env.tpl (a derived image COPYs it there), then /opt/orca/env.tpl (from the laptop), both
+# optional; a variable set in both takes the local value. /var/lib/orca/op-token holds one line, a 1Password
+# service-account token, put there by `make secret`; op resolves the references with it.
+# Rotate a token in 1Password, restart this unit: that is the whole point. op runs from its own image, as the
+# rest of the host does. The token itself goes into the file too, so the sessions' own `op` reads the
+# same vault. /var/lib/orca/env.image records the image rendered from: `up` renders again when it moves.
+# Retries until the token is there: `make secret` comes after the install.
+set -eu
+image="$ORCA_IMAGE"
+docker pull -q "$image" >/dev/null
+tpl=$(docker run --rm --pull never --entrypoint sh "$image" -c \
+  '[ ! -f /etc/orca-host/env.tpl ] || cat /etc/orca-host/env.tpl')
+[ ! -f /opt/orca/env.tpl ] || tpl=$(printf '%s\n' "$tpl"; cat /opt/orca/env.tpl)
+[ -n "$tpl" ] || { echo "no .env.tpl: neither /etc/orca-host/env.tpl in $image nor /opt/orca/env.tpl"; exit 1; }
+until [ -s /var/lib/orca/op-token ]; do
+  echo "no /var/lib/orca/op-token yet (make secret), retrying in 15s"
+  sleep 15
+done
+# a token pasted by hand may carry a newline; op wants the value alone
+OP_SERVICE_ACCOUNT_TOKEN=$(tr -d '\r\n' < /var/lib/orca/op-token)
+export OP_SERVICE_ACCOUNT_TOKEN
+# `sh` has no pipefail: hold the result, write nothing rather than half a file. Failing is the point —
+# the stack must not come up on the env file of the last boot. `make secret` is the way back.
+rendered=$(printf '%s\n' "$tpl" \
+  | docker run --rm -i -e OP_SERVICE_ACCOUNT_TOKEN 1password/op:2.39.0 op inject)
+[ -n "$rendered" ] || { echo ".env.tpl rendered empty: expired token, or an item it cannot read"; exit 1; }
+umask 077
+# the last line of a variable wins: the local file's, over the image's
+printf '%s\nOP_SERVICE_ACCOUNT_TOKEN=%s\n' "$rendered" "$OP_SERVICE_ACCOUNT_TOKEN" \
+  | awk -F= '/^[A-Za-z_][A-Za-z0-9_]*=/ { if (!($1 in v)) k[n++] = $1; v[$1] = $0 }
+             END { for (i = 0; i < n; i++) print v[k[i]] }' > /var/lib/orca/env.tmp
+mv /var/lib/orca/env.tmp /var/lib/orca/env
+docker image inspect -f '{{.Id}}' "$image" > /var/lib/orca/env.image

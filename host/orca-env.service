@@ -1,0 +1,19 @@
+# The units of a Debian host, under /etc/systemd/system: the same three as Flatcar's, reading /opt/orca/host.env.
+[Unit]
+Description=orca-host: render the env file from 1Password
+# `op` runs from an image, so this unit needs Docker as much as orca.service does.
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+RequiresMountsFor=/var/lib/orca
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+EnvironmentFile=/opt/orca/host.env
+ExecStart=/opt/orca/render-env
+StandardOutput=journal+console
+StandardError=journal+console
+
+[Install]
+WantedBy=multi-user.target

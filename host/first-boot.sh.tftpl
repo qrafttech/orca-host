@@ -1,0 +1,99 @@
+#!/bin/bash
+# The whole of a Debian host, rendered by Terraform, run once as root on the first boot after an install (OVH's
+# postInstallScript; logs in /var/log/ovh-postinstall.log). Idempotent: run twice, it changes nothing.
+# What Ignition is to a Flatcar host: the user `core` and its SSH key, /var/lib/orca on the data disk (else the root
+# disk), Docker pinned from Docker's apt repository with its data root there, /opt/orca, the units, the firewall,
+# unattended upgrades. Everything else runs in containers. The files under /opt/orca come from host/, verbatim.
+set -euo pipefail
+export DEBIAN_FRONTEND=noninteractive
+
+# /var/lib/orca: the data disk when there is one, formatted the first time only, mounted by label; else a directory.
+data_device='${data_device}'
+mkdir -p /var/lib/orca
+if [ -n "$data_device" ]; then
+  blkid "$data_device" >/dev/null || mkfs.ext4 -q -L orca "$data_device"
+  grep -q '^LABEL=orca ' /etc/fstab || echo 'LABEL=orca /var/lib/orca ext4 defaults,nofail 0 2' >> /etc/fstab
+  systemctl daemon-reload
+  mountpoint -q /var/lib/orca || mount /var/lib/orca
+fi
+# /home/orca on the host is the same path as in the container, so a project's bind mounts line up.
+mkdir -p /var/lib/orca/home
+[ -L /home/orca ] || ln -s /var/lib/orca/home /home/orca
+
+# Docker's data root on /var/lib/orca, set before the daemon first starts.
+mkdir -p /etc/docker /etc/systemd/system/docker.service.d
+echo '{"data-root": "/var/lib/orca/docker"}' > /etc/docker/daemon.json
+printf '[Unit]\nRequiresMountsFor=/var/lib/orca\n' > /etc/systemd/system/docker.service.d/10-data-root.conf
+
+# Docker from Docker's repository, pinned: a bump is a commit.
+apt-get update -q
+apt-get install -y -q ca-certificates curl nftables unattended-upgrades
+install -d -m 0755 /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
+# shellcheck source=/dev/null
+. /etc/os-release
+codename=$VERSION_CODENAME version=$VERSION_ID
+echo "deb [signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian $codename stable" \
+  > /etc/apt/sources.list.d/docker.list
+apt-get update -q
+apt-get install -y -q --allow-downgrades \
+  "docker-ce=5:29.8.1-1~debian.$version~$codename" \
+  "docker-ce-cli=5:29.8.1-1~debian.$version~$codename" \
+  "containerd.io=2.4.1-2~debian.$version~$codename" \
+  "docker-buildx-plugin=0.38.0-1~debian.$version~$codename" \
+  "docker-compose-plugin=5.6.0-1~debian.$version~$codename"
+apt-mark hold docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+printf 'APT::Periodic::Update-Package-Lists "1";\nAPT::Periodic::Unattended-Upgrade "1";\n' \
+  > /etc/apt/apt.conf.d/20auto-upgrades
+
+# core: the SSH user of every host, in docker and sudo, no password. No password login for anyone.
+id core >/dev/null 2>&1 || useradd -m -s /bin/bash core
+usermod -aG docker,sudo core
+echo 'core ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/core
+chmod 0440 /etc/sudoers.d/core
+install -d -m 0700 -o core -g core /home/core/.ssh
+cat > /home/core/.ssh/authorized_keys <<'ORCA_EOF'
+${ssh_key}
+ORCA_EOF
+chown core:core /home/core/.ssh/authorized_keys
+chmod 0600 /home/core/.ssh/authorized_keys
+# the first value read wins, and 00- is read before the image's 50-cloud-init.conf
+printf 'PasswordAuthentication no\nKbdInteractiveAuthentication no\n' > /etc/ssh/sshd_config.d/00-orca.conf
+systemctl reload ssh
+
+# /opt/orca: what the units run and read. host.env is the host's own values; env.tpl is the laptop's, if any,
+# references, not values. `make restart` writes env.tpl again, so a line added since needs no reinstall.
+mkdir -p /opt/orca
+cat > /opt/orca/host.env <<'ORCA_EOF'
+TS_HOSTNAME=${name}
+ORCA_DATA=/var/lib/orca
+ORCA_IMAGE=${orca_image}
+ORCA_ENV_FILE=/var/lib/orca/env
+ORCA_EOF
+cat > /opt/orca/compose.yaml <<'ORCA_EOF'
+${compose}
+ORCA_EOF
+%{ if env_tpl != "" ~}
+(umask 077; cat > /opt/orca/env.tpl <<'ORCA_EOF'
+${env_tpl}
+ORCA_EOF
+)
+%{ endif ~}
+%{ for file, content in scripts ~}
+cat > /opt/orca/${file} <<'ORCA_EOF'
+${content}
+ORCA_EOF
+chmod 0755 /opt/orca/${file}
+%{ endfor ~}
+%{ for unit, content in units ~}
+cat > /etc/systemd/system/${unit} <<'ORCA_EOF'
+${content}
+ORCA_EOF
+%{ endfor ~}
+
+/opt/orca/firewall
+systemctl enable nftables
+systemctl daemon-reload
+systemctl enable docker orca-env.service orca.service orca-update.timer
+systemctl restart docker
+systemctl start --no-block orca.service orca-update.timer
