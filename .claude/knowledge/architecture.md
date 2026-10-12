@@ -1,6 +1,6 @@
 # Architecture
 
-Image, stack, host. Each layer works without the one above it: the image runs on any Docker host, the stack on any Linux Docker host with `/dev/net/tun`, the Terraform module brings up a GCP VM that runs the stack. Another provider is another module rendering the same Ignition config.
+Image, stack, host. Each layer works without the one above it: the image runs on any Docker host, the stack on any Linux Docker host with `/dev/net/tun`, the Terraform module brings up a GCP VM that runs the stack. Another provider is another Terraform root: `terraform/ovh/` installs Debian on an OVH VPS with `host/first-boot.sh.tftpl` (below, **An OVH host**).
 
 ```
 laptop / phone ──tailnet──▶ VM (Flatcar Container Linux, Ignition)
@@ -157,6 +157,18 @@ Host <name>
   StrictHostKeyChecking no
   UserKnownHostsFile /dev/null
 ```
+
+## An OVH host
+
+`PROVIDER=ovh`, `terraform/ovh/`. Same stack, same `/var/lib/orca`, same units; the VM underneath is Debian, not Flatcar, because an OVH VPS takes no custom image and no user-data. What it takes is a bash script run once at the first boot after a reinstall (`postInstallScript` on `POST /vps/{service}/rebuild`): `host/first-boot.sh.tftpl`, rendered by Terraform from `compose.yaml` and the files under `host/`, which does what Ignition does on GCP. It runs as root and logs to `/var/log/ovh-postinstall.log`.
+
+- **The VPS** is ordered by hand and imported (`ovh_vps`, `prevent_destroy`): Terraform never orders nor terminates one.
+- **The install** is `terraform_data.install`. The `ovh` provider does not pass a post-install script, so its `local-exec` calls `ovhcloud vps reinstall --from-file` with the image id (looked up by `image_name`), the SSH key and the script. It is replaced, i.e. the VPS reinstalled, when the image or the key changes, or on `make rebuild`; a change of the script alone is stored, not applied.
+- **Tools**: Terraform and `ovhcloud` run from `tools/Dockerfile`, pinned. OVH's API credentials are an item `ovh-api` (`endpoint`, `application_key`, `application_secret`, `consumer_key`) that `op run` puts in the container's environment; the state is in the GCS bucket `state_bucket`, through application-default credentials.
+- **The token**: no Secret Manager, no instance identity. `make secret` writes `/var/lib/orca/op-token` over SSH; `render-env` waits for it. The first time, the host is not on the tailnet yet (its key is read with that token), so `make secret` falls back to the public address.
+- **Firewall**: GCP's VPC is replaced by nftables, `/opt/orca/firewall`, its own table beside Docker's. In: the tailnet, Docker's bridges, ICMP, DHCP, Tailscale's UDP 41641, and SSH until `make lockdown` (a marker, `/var/lib/orca/lockdown`). Forward: no new connection from the public interface reaches a container, so a project's `ports:` stays on the tailnet.
+- **Disk**: `data_device`, the VPS's additional disk if ordered, survives a reinstall. Without one, `/var/lib/orca` is on the root disk and a reinstall wipes it, pairing included.
+- **Docker** comes from Docker's apt repository, versions pinned in the script and held; Debian's own packages update unattended.
 
 ## Restart or rebuild
 

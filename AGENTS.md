@@ -34,6 +34,9 @@ A VM that runs `orca serve` headless, one host per person, all of that person's 
 | Claude token, GitHub token, git identity | the tokens into 1Password items, `.env.tpl` references them; the identity in `.env.tpl` | — |
 | the tokens your MCP servers and your own tools read | 1Password items, referenced from `.env.tpl` | — |
 | state bucket | `make bootstrap` | — |
+| OVH VPS: the order | OVH control panel | — |
+| OVH API credentials (`endpoint`, `application_key`, `application_secret`, `consumer_key`) | createtoken page, into a 1Password item `ovh-api` | — |
+| OVH: SSH off the public address | `make lockdown`, after `make pair` | in the install, once the token is there |
 | the service-account token into Secret Manager | `make secret` | — |
 | renewing that token when it expires | 1Password, then `make secret` and `make restart` | a reminder before the expiry |
 | pairing | `make pair` | from the Orca client |
