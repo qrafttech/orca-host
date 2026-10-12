@@ -3,8 +3,8 @@
 # is the natural place) or kept here, gitignored: TFVARS, the host's name, project, zone, SSH key; ENV_TPL, the
 # variables the host starts with, `VAR=value` per line, a secret as a `{{ op://Vault/Item/field }}` reference.
 # A reference is not a secret: 1Password holds the values, and nothing else.
-# The host reads the image's /etc/orca-host/env.tpl, then ENV_TPL (Terraform carries it), and resolves both at every
-# boot with a service account. `make env` does the same here, with your own account. What the host needs from this
+# The host reads the image's /etc/orca-host/env.tpl, then ENV_TPL (Terraform carries it, `make restart` copies it
+# again), and resolves both at every boot with a service account. `make env` does the same here, with your own account. What the host needs from this
 # laptop is that account's token — `make secret`, once.
 TFVARS  ?= terraform/terraform.tfvars
 ENV_TPL ?= .env.tpl
@@ -104,9 +104,11 @@ pair-mobile:        ## restart the server on its mobile link, show it as a QR fo
 	  read -r _ || { echo; echo "no terminal to wait on: scan it, then \`make restart\`"; exit 1; }
 	$(SSH) core@$(NAME) sudo systemctl restart orca-env orca
 
-# compose recreates the container only when its image or its env file changed: a push to the settings repository
-# changes neither, so the container is restarted as well, and its entrypoint runs again.
-restart:            ## re-render the env file from 1Password, re-run the stack and the entrypoint. Ends live terminals.
+# ENV_TPL first, when there is one: Ignition wrote it at first boot only, so a line added since reaches the host
+# here, with no rebuild. compose recreates the container only when its image or its env file changed: a push to the
+# settings repository changes neither, so the container is restarted as well, and its entrypoint runs again.
+restart:            ## copy ENV_TPL, re-render the env file from 1Password, re-run the stack and the entrypoint. Ends live terminals.
+	$(if $(wildcard $(ENV_TPL)),$(SSH) core@$(NAME) "sudo sh -c 'umask 077; cat > /opt/orca/env.tpl.tmp && mv /opt/orca/env.tpl.tmp /opt/orca/env.tpl'" < $(ENV_TPL))
 	$(SSH) core@$(NAME) 'sudo systemctl restart orca-env orca && docker restart orca-host'
 
 logs:
