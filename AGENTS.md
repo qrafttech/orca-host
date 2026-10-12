@@ -32,7 +32,7 @@ A VM that runs `orca serve` headless, one host per person, all of that person's 
 | a service account on that vault, read-only, and its token in an item of it | 1Password admin console, once | — |
 | Tailscale auth key | admin console, into a 1Password item `.env.tpl` references | Tailscale API, into that item |
 | Claude token, GitHub token, git identity | the tokens into 1Password items, `.env.tpl` references them; the identity in `.env.tpl` | — |
-| the tokens your MCP servers and your own tools read | 1Password items, referenced from `.env.tpl` or `ENV_TEMPLATE` | — |
+| the tokens your MCP servers and your own tools read | 1Password items, referenced from `.env.tpl` | — |
 | state bucket | `make bootstrap` | — |
 | the service-account token into Secret Manager | `make secret` | — |
 | renewing that token when it expires | 1Password, then `make secret` and `make restart` | a reminder before the expiry |

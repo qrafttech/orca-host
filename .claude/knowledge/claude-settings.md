@@ -9,7 +9,7 @@ Two optional variables in `.env.tpl`, both merged into `~/.claude/settings.json`
   - `permissions` from `CLAUDE_SETTINGS_FILE` (default `settings.json`). Only that key: hooks and status lines point at laptop things.
   - a root `CLAUDE.md`, symlinked to `~/.claude/CLAUDE.md` unless one exists
   - `.claude/skills`, symlinked to `~/.claude/skills` unless one exists
-  - `config/mcp.json`: merged into the user-level MCP servers of `~/.claude.json`, never overwriting a server already present (added by hand, or from a previous merge with local edits). Its `${VAR}` are read from the container's environment: `.env.tpl` and `ENV_TEMPLATE`.
+  - `config/mcp.json`: merged into the user-level MCP servers of `~/.claude.json`, never overwriting a server already present (added by hand, or from a previous merge with local edits). Its `${VAR}` are read from the container's environment: `.env.tpl`.
 
 Neither set: Claude's defaults, it asks.
 
@@ -26,6 +26,6 @@ The same shape as any `.mcp.json`, HTTP or stdio:
 }
 ```
 
-Claude Code expands `${VAR}` in `url`, `headers`, `env` and `args` from the environment it runs in, which on the host is `.env.tpl` plus `ENV_TEMPLATE` (README, "Your environment"): a token is one line there and one `${VAR}` here, and a server that takes its key in a header needs no OAuth. At start Claude warns which variables are missing; `claude mcp list` shows the same. A server that only offers OAuth needs its browser flow once per host, by hand.
+Claude Code expands `${VAR}` in `url`, `headers`, `env` and `args` from the environment it runs in, which on the host is `.env.tpl` (README, "Configure your host"): a token is one line there and one `${VAR}` here, and a server that takes its key in a header needs no OAuth. At start Claude warns which variables are missing; `claude mcp list` shows the same. A server that only offers OAuth needs its browser flow once per host, by hand.
 
 Commit, push, and `make restart`: the repository is pulled at every start. Setting `CLAUDE_SETTINGS_REPO` for the first time is a line in `.env.tpl`: see README, Updates, for how it reaches the host.
