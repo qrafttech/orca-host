@@ -8,3 +8,7 @@ env
 # laptop compose state
 data/
 .pairing-url
+
+# OVH host: per-person values and local state
+terraform/ovh/terraform.tfvars
+terraform/ovh/.terraform/

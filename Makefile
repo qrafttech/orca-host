@@ -1,4 +1,6 @@
 # orca-host, laptop side. Needs: docker, terraform, gcloud, op (1Password CLI), jq, ssh, qrencode, the Orca desktop CLI.
+# PROVIDER: gcp, the default (terraform/), or ovh (terraform/ovh/, an OVH VPS). On ovh, Terraform and the ovhcloud
+# CLI run from the image `make tools` builds: Docker, op and gcloud's application-default credentials are enough.
 # Two per-person files, plain configuration, versioned wherever you keep your host (the repository of your own image
 # is the natural place) or kept here, gitignored: TFVARS, the host's name, project, zone, SSH key; ENV_TPL, the
 # variables the host starts with, `VAR=value` per line, a secret as a `{{ op://Vault/Item/field }}` reference.
@@ -6,14 +8,16 @@
 # The host reads the image's /etc/orca-host/env.tpl, then ENV_TPL (Terraform carries it, `make restart` copies it
 # again), and resolves both at every boot with a service account. `make env` does the same here, with your own account. What the host needs from this
 # laptop is that account's token — `make secret`, once.
-TFVARS  ?= terraform/terraform.tfvars
+PROVIDER ?= gcp
+TF_DIR    = $(if $(filter ovh,$(PROVIDER)),terraform/ovh,terraform)
+TFVARS  ?= $(TF_DIR)/terraform.tfvars
 ENV_TPL ?= .env.tpl
 # `=`, not `:=`: expanded in recipes, once $(TFVARS) is known to exist. At parse time it may not.
 NAME     = $(shell sed -n 's/^name *= *"\(.*\)".*/\1/p' $(TFVARS) 2>/dev/null)
 PROJECT  = $(shell sed -n 's/^project *= *"\(.*\)".*/\1/p' $(TFVARS) 2>/dev/null)
 ZONE     = $(or $(shell sed -n 's/^zone *= *"\(.*\)".*/\1/p' $(TFVARS) 2>/dev/null),europe-west9-b)
 REGION   = $(shell echo $(ZONE) | sed 's/-[a-z]$$//')
-BUCKET   = $(PROJECT)-tfstate
+BUCKET   = $(or $(shell sed -n 's/^state_bucket *= *"\(.*\)".*/\1/p' $(TFVARS) 2>/dev/null),$(PROJECT)-tfstate)
 SECRET   = $(NAME)-op-token
 OP_VAULT  = $(shell sed -n 's/^op_vault *= *"\(.*\)".*/\1/p' $(TFVARS) 2>/dev/null)
 OP_TOKEN  = op://$(OP_VAULT)/orca-host-service-account/credential
@@ -21,15 +25,30 @@ OP_TOKEN  = op://$(OP_VAULT)/orca-host-service-account/credential
 READ_TPL  = { docker run --rm --entrypoint sh $(ORCA_IMAGE) -c '[ ! -f /etc/orca-host/env.tpl ] || cat /etc/orca-host/env.tpl'; \
 	      [ ! -f $(ENV_TPL) ] || cat $(ENV_TPL); }
 LAST_WINS = awk -F= '/^[A-Za-z_][A-Za-z0-9_]*=/ { if (!($$1 in v)) k[n++] = $$1; v[$$1] = $$0 } END { for (i = 0; i < n; i++) print v[k[i]] }'
-TF      := terraform -chdir=terraform
-# TFVARS by path, wherever it is; ENV_TPL only when it exists, its content goes into Ignition
+TF       = $(if $(filter ovh,$(PROVIDER)),$(TF_OVH),terraform -chdir=terraform)
+# OVH's API credentials, items of 1Password: `op run` resolves the references into the environment of the tools
+# container, for Terraform's ovh provider and the ovhcloud CLI alike. The state is in GCS: application-default
+# credentials. TFVARS and ENV_TPL are mounted at their own paths, so TF_VARS reads the same inside.
+TOOLS     := orca-host-tools:dev
+OVH_ITEM  ?= op://$(OP_VAULT)/ovh-api
+ADC       ?= $(HOME)/.config/gcloud/application_default_credentials.json
+TF_OVH    = OVH_ENDPOINT="$(OVH_ITEM)/endpoint" OVH_APPLICATION_KEY="$(OVH_ITEM)/application_key" \
+	    OVH_APPLICATION_SECRET="$(OVH_ITEM)/application_secret" OVH_CONSUMER_KEY="$(OVH_ITEM)/consumer_key" \
+	    op run -- docker run --rm -i -u $$(id -u):$$(id -g) -e HOME=/tmp \
+	      -e OVH_ENDPOINT -e OVH_APPLICATION_KEY -e OVH_APPLICATION_SECRET -e OVH_CONSUMER_KEY \
+	      -e GOOGLE_APPLICATION_CREDENTIALS=/adc.json -v $(ADC):/adc.json:ro \
+	      -v $(CURDIR):$(CURDIR) -v $(abspath $(TFVARS)):$(abspath $(TFVARS)):ro \
+	      $(if $(wildcard $(ENV_TPL)),-v $(abspath $(ENV_TPL)):$(abspath $(ENV_TPL)):ro) \
+	      -w $(CURDIR) $(TOOLS) -chdir=terraform/ovh
+REPLACE   = $(if $(filter ovh,$(PROVIDER)),terraform_data.install,google_compute_instance.vm)
+# TFVARS by path, wherever it is; ENV_TPL only when it exists, its content goes into Ignition or the install script
 TF_VARS  = -var-file=$(abspath $(TFVARS)) $(if $(wildcard $(ENV_TPL)),-var env_tpl=$(abspath $(ENV_TPL)))
 # Every rebuild is a new host key, and the tailnet already authenticates the peer: no host-key check for this host.
 SSH     := ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR
 # What `make up` runs, the same variable a host uses: `make build`'s output by default, any reference on request.
 ORCA_IMAGE ?= orca-host:dev
 
-.PHONY: build up down secret bootstrap init plan apply rebuild pair pair-desktop pair-mobile restart logs shell ssh
+.PHONY: build up down tools secret bootstrap init plan apply rebuild lockdown pair pair-desktop pair-mobile restart logs shell ssh
 # A failed `op inject` (locked vault, missing item) must not leave an empty file that Make then takes as up to date.
 .DELETE_ON_ERROR:
 
@@ -54,16 +73,31 @@ up: env             ## run the stack here, advertised on this laptop's tailnet I
 down:
 	docker compose -f compose.yaml -f compose.laptop.yaml --env-file env down
 
-## host, on GCP
-secret bootstrap init plan apply rebuild pair-desktop pair-mobile restart logs shell ssh: $(TFVARS)
+## host, on GCP or OVH
+secret bootstrap init plan apply rebuild lockdown pair-desktop pair-mobile restart logs shell ssh: $(TFVARS)
+init plan apply rebuild secret: $(if $(filter ovh,$(PROVIDER)),tools)
+
+tools:              ## the image Terraform and the ovhcloud CLI run from, for an OVH host
+	docker build -q -t $(TOOLS) tools
 # the pairing URL of the running server, from the last orca_server_ready line of its logs; empty until it is up
 PAIRING_URL = $(SSH) core@$(NAME) docker logs orca-host 2>/dev/null \
 	  | jq -Rr 'fromjson? | select(.type=="orca_server_ready") | .pairing.url' | tail -1
 
 # One line, and the only thing this laptop hands the host. A service-account token expires: the day it does,
-# a new one goes in the item and this runs again — nothing else moves.
-secret:             ## the service-account token, from 1Password, as a new version of the host's secret
+# a new one goes in the item and this runs again — nothing else moves. On GCP, a version of the host's secret;
+# on OVH, /var/lib/orca/op-token over SSH: the tailnet when the host is on it, else its public address, since
+# the host joins the tailnet with a key it reads with this very token.
+secret:             ## the service-account token, from 1Password, to the host
+ifeq ($(PROVIDER),ovh)
+	token=$$(op read "$(OP_TOKEN)" | tr -d '\r\n'); [ -n "$$token" ] || exit 1; \
+	for h in $(NAME) $$($(TF) output -raw ipv4); do \
+	  printf '%s' "$$token" | $(SSH) -o ConnectTimeout=10 core@$$h \
+	    "sudo sh -c 'umask 077; cat > /var/lib/orca/op-token.tmp && mv /var/lib/orca/op-token.tmp /var/lib/orca/op-token'" \
+	    && exit 0; \
+	done; exit 1
+else
 	op read "$(OP_TOKEN)" | tr -d '\r\n' | gcloud secrets versions add $(SECRET) --data-file=- --project $(PROJECT)
+endif
 
 bootstrap:          ## once per project: the state bucket
 	gcloud storage buckets describe gs://$(BUCKET) --project $(PROJECT) >/dev/null 2>&1 || \
@@ -80,8 +114,13 @@ plan:
 apply:              ## bring the host up (or update it)
 	$(TF) apply $(TF_VARS)
 
-rebuild:            ## a new VM from Ignition, the data disk kept: what Ignition carries changed. Ends live terminals.
-	$(TF) apply $(TF_VARS) -replace=google_compute_instance.vm
+rebuild:            ## a new VM (GCP) or a reinstall (OVH), the data disk kept: what the VM is made of changed. Ends live terminals.
+	$(TF) apply $(TF_VARS) -replace=$(REPLACE)
+
+# An OVH host answers SSH on its public address until this, for the first `make secret`. Over the tailnet, so the
+# session doing it is not the one cut. A GCP host has no public SSH to close.
+lockdown:           ## OVH: SSH on the tailnet only, from now on and across reinstalls of a kept data disk
+	$(SSH) core@$(NAME) 'sudo touch /var/lib/orca/lockdown && sudo /opt/orca/firewall'
 
 pair: pair-desktop pair-mobile  ## the desktop client, then the phone, then the server back to its desktop link
 
