@@ -10,30 +10,44 @@ Three layers, each usable without the one above: an image (`Dockerfile`, publish
 
 | What | Where | Holds |
 |---|---|---|
-| The host | `terraform/terraform.tfvars` | name, GCP project, zone, 1Password vault, SSH public key; size and image reference, optional |
-| You | the env file | Tailscale auth key, Claude token, GitHub token, git identity, Claude preferences |
+| The host | `terraform.tfvars` | name, GCP project, zone, 1Password vault, SSH public key; size and image reference, optional |
+| You | `.env.tpl` | Tailscale auth key, Claude token, GitHub token, git identity, Claude preferences: a value, or for a secret a reference to a 1Password item |
+| Your secrets | 1Password, the vault `op_vault` names | the values those references point at, and nothing else |
 | Your Claude settings | a git repository of yours, optional | permissions, `CLAUDE.md`, skills, MCP server declarations |
 | Your tools | an image of yours, built `FROM` this one, optional | binaries, MCP servers, anything installed |
 | A project | its own repository | `orca.yaml`, worktree scripts, `.env` files, compose, `.claude/` |
 
-Nothing in this repository is per person or per project. The first two files are gitignored and come from 1Password: `terraform.tfvars` is the body of a Secure Note named `orca-host-tfvars`, the env file of one named `orca-host`, both in the vault `op_vault` names in the tfvars. `make` fetches a file when it is missing; edit the local copy freely, `rm` it to refetch. A line of the env note may point at another item, `FOO_TOKEN={{ op://Vault/Item/field }}`: `op inject` resolves it, so a token lives once, in its own item — and the vault must be that same one, since a service account is scoped per vault.
+Nothing in this repository is per person or per project. `terraform.tfvars` and `.env.tpl` hold no secret: keep them versioned in a repository of yours (the one that builds your own image is the natural place), or here, gitignored. `TFVARS` and `ENV_TPL` tell `make` where they are, by default `terraform/terraform.tfvars` and `.env.tpl`.
 
-The env file:
+## Configure your host
+
+`.env.tpl` is the convention a project uses for its `.env`, applied to the host: one `VAR=value` per line, a secret written as a `{{ op://Vault/Item/field }}` reference. A reference is not a secret, so the file can be versioned; `op inject` resolves it.
 
 ```
-TS_AUTHKEY=tskey-auth-...                   Tailscale admin console → Settings → Keys: reusable off, ephemeral off, tag orca-host
-CLAUDE_CODE_OAUTH_TOKEN=...                 `claude setup-token` on the laptop
-GH_TOKEN=...                                classic personal access token, scopes `repo` + `read:org`
+TS_AUTHKEY={{ op://Vault/tailscale/authkey }}         Tailscale admin console → Settings → Keys: reusable off, ephemeral off, tag orca-host
+CLAUDE_CODE_OAUTH_TOKEN={{ op://Vault/claude/token }} `claude setup-token` on the laptop
+GH_TOKEN={{ op://Vault/github/token }}                classic personal access token, scopes `repo` + `read:org`
 GIT_AUTHOR_NAME=...
 GIT_AUTHOR_EMAIL=...
-CLAUDE_PERMISSION_MODE=auto                 optional, see Claude settings
-CLAUDE_SETTINGS_REPO=me/claude              optional, see Claude settings
-ENV_TEMPLATE=me/dotfiles/env.tpl            optional, or a file: see Your environment
-CLAUDE_SETTINGS_FILE=config/settings.json   optional: where settings.json is in that repository
-FOO_TOKEN={{ op://Vault/Item/field }}       anything else reaches the container as is: the `${FOO_TOKEN}` of your MCP servers, what your own tools read
+CLAUDE_PERMISSION_MODE=auto                           optional, see Claude settings
+CLAUDE_SETTINGS_REPO=me/claude                        optional, see Claude settings
+CLAUDE_SETTINGS_FILE=config/settings.json             optional: where settings.json is in that repository
+ENV_TEMPLATE=me/dotfiles/env.tpl                      optional, or a file: see Your environment
+FOO_TOKEN={{ op://Vault/foo/token }}                  anything else reaches the container as is: the `${FOO_TOKEN}` of your MCP servers, what your own tools read
 ```
 
-The host renders that note itself, at every boot. Secret Manager holds one line — the token of a 1Password service account, read-only on that one vault — and `make secret` puts it there, once. So a token you rotate in 1Password, or a variable you add to the note, is a `make restart` away; nothing is frozen at the moment it was uploaded. On a laptop, `make env` renders the same note with your own account, into `./env`.
+Every reference points at the vault `op_vault` names: the host's service account reads that one vault.
+
+Where the host reads it, two places, both optional:
+
+| The file | A change |
+|---|---|
+| `/etc/orca-host/env.tpl` in your own image: `COPY .env.tpl /etc/orca-host/env.tpl` in its `Dockerfile` | a push: your CI builds, the host redeploys within five minutes and renders the env file again |
+| `.env.tpl` on the laptop, at `ENV_TPL`: Terraform carries it to the VM | a rebuild, see Updates |
+
+Both exist: the image's first, then the laptop's, so a variable set in both takes the laptop's value.
+
+The host renders them itself, at every boot, into its env file. Secret Manager holds one line — the token of a 1Password service account, read-only on that one vault — and `make secret` puts it there, once. So a token you rotate in 1Password is a `make restart` away; nothing is frozen at the moment it was uploaded. On a laptop, `make env` renders the same files with your own account, into `./env`.
 
 ## Install
 
@@ -45,7 +59,7 @@ Needed on the laptop: `docker`, `terraform`, `gcloud`, `op` (1Password CLI), `jq
 
 2. **Once per GCP project**: `gcloud auth application-default login` (Terraform's login, separate from `gcloud auth login`), then `make bootstrap` for the state bucket.
 3. **A 1Password vault for the host**, technical: the tokens your agents read, no password data. A service account on it, read-only, its token saved in an item named `orca-host-service-account` in that same vault. `make secret` reads it from there; the host never does, it gets the token from Secret Manager.
-4. **The two Secure Notes**, in that vault: `orca-host-tfvars` is `terraform/terraform.tfvars.example` filled in; `orca-host` is the env file above. Fine-grained GitHub tokens do not work; the organisation must allow classic ones. The first fetch is the only one that cannot read the vault name from the tfvars: `make OP_VAULT="<vault>" init`.
+4. **The two files**: `terraform.tfvars` is `terraform/terraform.tfvars.example` filled in; `.env.tpl` is above, each secret an item in that vault. Fine-grained GitHub tokens do not work; the organisation must allow classic ones.
 
    <img src="docs/tailscale-auth-key.png" width="49%" alt="Generate auth key"> <img src="docs/github-token.png" width="49%" alt="Token scopes">
 
@@ -91,11 +105,11 @@ At every start the host reads it, resolves it with `op inject` and its service-a
 
 The file holds no secret, so it can live in git next to your dotfiles, and a laptop can resolve the same file into its shell (`op inject -i env.tpl`, or a chezmoi `output`): the list is written once. Adding a variable: a line, a `git push`, `make restart`. `op inject` reads every `op://` in the file, comments included.
 
-The env note keeps what the host needs before the template can be read: `TS_AUTHKEY`, `GH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`, the git identity.
+`.env.tpl` keeps what the host needs before this file can be read: `TS_AUTHKEY`, `GH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`, the git identity. `.env.tpl` is read by the VM, before any container exists; this file by the container, at each of its starts, and your laptop's shell can share it.
 
 ## Claude settings
 
-Two optional variables in the env file. Neither set: Claude's defaults.
+Two optional variables in `.env.tpl`. Neither set: Claude's defaults.
 
 - `CLAUDE_PERMISSION_MODE`: `default`, `acceptEdits`, `auto` or `plan`, the permission mode of Claude panes.
 - `CLAUDE_SETTINGS_REPO`: `<owner>/<repo>`, your Claude settings versioned in git, pulled at every start. What is taken from it:
@@ -105,7 +119,7 @@ Two optional variables in the env file. Neither set: Claude's defaults.
   | `permissions` in `CLAUDE_SETTINGS_FILE` (default `settings.json`) | `~/.claude/settings.json`; hooks and status lines are not taken |
   | `CLAUDE.md` at the root | `~/.claude/CLAUDE.md` |
   | `.claude/skills/` | `~/.claude/skills` |
-  | `config/mcp.json` | user-level MCP servers; their `${VAR}` come from the env file |
+  | `config/mcp.json` | user-level MCP servers; their `${VAR}` come from `.env.tpl` and `ENV_TEMPLATE` |
 
   Text only, pulled at every start: changing a permission is a `git push` and a `make restart`, never a rebuild. Software is the next section. Formats: [claude-settings.md](.claude/knowledge/claude-settings.md).
 
@@ -117,6 +131,7 @@ The image names no tool of yours: `claude`, `gh`, `git`, the Docker CLI, `op`, `
 FROM ghcr.io/qrafttech/orca-host:main@sha256:<digest>
 RUN curl -fsSL -o /tmp/x "<url>" && echo "<sha256>  /tmp/x" | sha256sum -c - \
  && install -m 755 /tmp/x /usr/local/bin/<tool> && rm /tmp/x
+COPY .env.tpl /etc/orca-host/env.tpl
 ```
 
 `/usr/local/bin` is on the PATH of every session already. Your CI builds and pushes it; make it public — it holds no secret, and the host then needs no registry login. Point the host at it:
@@ -125,7 +140,7 @@ RUN curl -fsSL -o /tmp/x "<url>" && echo "<sha256>  /tmp/x" | sha256sum -c - \
 orca_image = "ghcr.io/me/orca-host:main"   # terraform.tfvars
 ```
 
-That is an Ignition change, so once: `terraform -chdir=terraform apply -replace=google_compute_instance.vm`. From then on a new build under the same tag needs nothing: the host checks the tag every five minutes and redeploys itself when the digest has moved, as for any other image change.
+That is an Ignition change, so once: `make rebuild`. From then on a new build under the same tag needs nothing: the host checks the tag every five minutes and redeploys itself when the digest has moved, as for any other image change.
 
 **Keeping up with the base.** Pin the `FROM` to a digest, as above, and let Dependabot watch it — in your repository, `.github/dependabot.yml`:
 
@@ -146,12 +161,13 @@ Every time `main` moves here, you get a pull request bumping that digest, your C
 | this repository, merged to `main`; the host runs the base image | the host redeploys within five minutes of the build | nothing |
 | this repository, merged to `main`; the host runs your own image | Dependabot opens a pull request in your repository, within a day | merge it: next row |
 | your own image, merged to its `main` | your CI builds it; the host redeploys within five minutes | nothing |
-| the env note, or a token it references | nothing until the next restart | `make restart` |
+| `.env.tpl` in your own image | your CI builds; the host redeploys within five minutes and renders its env file again | nothing |
+| a token in 1Password | nothing until the next restart | `make restart` |
 | your settings repository: permissions, `CLAUDE.md`, skills, `config/mcp.json` | pulled at every start of the container | `make restart` |
-| `compose.yaml`, `terraform/ignition.yaml.tftpl`, `orca_image` | nothing: Ignition runs at first boot only | `terraform -chdir=terraform apply -replace=google_compute_instance.vm` |
+| `compose.yaml`, `terraform/ignition.yaml.tftpl`, `orca_image`, the laptop's `.env.tpl` | nothing: Ignition runs at first boot only | `make rebuild` |
 
 - **Redeploy**: the host sees a new image under the tag it follows and restarts its container on it.
-- **Restart** (`make restart`): the env file rendered again from 1Password, the image pulled, the container restarted even when neither changed, so the entrypoint reads `ENV_TEMPLATE` and the settings repository again.
+- **Restart** (`make restart`): the env file rendered again from `.env.tpl` and 1Password, the image pulled, the container restarted even when neither changed, so the entrypoint reads `ENV_TEMPLATE` and the settings repository again.
 - **Rebuild** (`apply -replace`): a new VM, from Ignition.
 
 All three end live terminals, and all three keep the data disk: checkouts, Tailscale identity, pairing, Docker's images and the volumes of project stacks. To stay on one build, name its `sha-<sha>` tag in `orca_image`: the host then never redeploys by itself.

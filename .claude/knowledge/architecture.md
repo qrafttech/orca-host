@@ -8,7 +8,7 @@ laptop / phone ──tailnet──▶ VM (Flatcar Container Linux, Ignition)
                              │    home/       /home/orca: checkouts, ~/.claude, Orca state
                              │    tailscale/  node identity: same tailnet IP after a rebuild
                              │    docker/     Docker's data root: images, build cache, the volumes of project stacks
-                             │    env         the env file, rendered from the 1Password note at every boot
+                             │    env         the env file, rendered from .env.tpl and 1Password at every boot
                              └─ compose.yaml
                                   ├─ tailscale   host network, /dev/net/tun
                                   └─ orca-host   host network, `orca serve --pairing-address <tailnet IP>`
@@ -39,7 +39,7 @@ Beside, not inside: the `orca-host` container has the VM's Docker socket, so a `
 - Versions are build args at the top of the `Dockerfile`. Orca is pinned to the desktop client's version (protocol compatibility). A bump is a PR that says why.
 - It names no tool beyond those. What one person wants installed is not in this repository at all: see below.
 
-**What is personal, and where.** Software is an image of the person's own, below. Text (permissions, `CLAUDE.md`, skills, `config/mcp.json`) is the settings repository, pulled at every start, because a permission should not need a rebuild. Secrets are the env file, because an image must never carry one. Three kinds, three mechanisms, no overlap.
+**What is personal, and where.** Software is an image of the person's own, below. Text (permissions, `CLAUDE.md`, skills, `config/mcp.json`) is the settings repository, pulled at every start, because a permission should not need a rebuild. Configuration is `.env.tpl`, versioned, its secrets as references; their values are 1Password items, because neither a repository nor an image may carry one. Three kinds, three mechanisms, no overlap.
 
 The entrypoint starts as root, gives `orca` the Docker socket's group and its home (a volume: empty and root-owned the first time), then re-executes as `orca`:
 
@@ -89,18 +89,20 @@ The VM is Flatcar Container Linux: immutable, Docker built in, nothing installed
 - the SSH key for `core`
 - the data disk: ext4, labelled `orca`, mounted at `/var/lib/orca`, never wiped (`wipe_filesystem: false`)
 - `/home/orca → /var/lib/orca/home`
-- `/opt/orca/compose.yaml`, `/opt/orca/render-env`, `/opt/orca/up` (`/etc` is noexec on Flatcar)
+- `/opt/orca/compose.yaml`, `/opt/orca/render-env`, `/opt/orca/up` (`/etc` is noexec on Flatcar), and `/opt/orca/env.tpl` when the laptop has a `.env.tpl`
 - `/etc/docker/daemon.json`: Docker's data root at `/var/lib/orca/docker`, and a drop-in so `docker.service` starts after the data disk is mounted
 - `orca-env.service`: renders the env file, below. Retries until the secret has a version (`make secret` may come after `make apply`). It runs `op`, so it waits for Docker as `orca.service` does
-- `orca.service`: `docker compose up -d --pull always --remove-orphans`, run from the `docker:cli` image, since Flatcar ships no compose. Then `docker image prune -f`, once the stack is up: `--pull always` on a moving tag leaves the image it replaced untagged, and a full orca-host image is not small next to every project's images on the same disk. Dangling only, so nothing tagged and nothing a container uses is touched, and a failed prune does not fail the unit.
+- `orca.service`: `/opt/orca/up` pulls `orca_image`, renders the env file again if the image is not the one it was rendered from (a new image may carry a new `/etc/orca-host/env.tpl`), then `docker compose up -d --pull missing --remove-orphans`, run from the `docker:cli` image, since Flatcar ships no compose: compose runs the image the env file was rendered from, not one pulled a second later. Then `docker image prune -f`, once the stack is up: a pull on a moving tag leaves the image it replaced untagged, and a full orca-host image is not small next to every project's images on the same disk. Dangling only, so nothing tagged and nothing a container uses is touched, and a failed prune does not fail the unit.
 
-**Secrets.** Two hops, one vault. Secret Manager holds a single line, a 1Password service-account token; Terraform creates that secret empty and `make secret` adds the versions, so no secret ever passes through Terraform or its state. At every start of `orca-env.service` the VM reads it with its own GCP identity — the only permission that identity has — and renders the env file from the Secure Note `orca-host` in `op_vault`, `{{ op://Vault/Item/field }}` references included. `op` runs from its own image, as compose runs from `docker:cli`: Flatcar installs nothing.
+**Secrets.** Two hops, one vault. Secret Manager holds a single line, a 1Password service-account token; Terraform creates that secret empty and `make secret` adds the versions, so no secret ever passes through Terraform or its state. At every start of `orca-env.service` the VM reads it with its own GCP identity — the only permission that identity has — and renders the env file from `.env.tpl`: the image's `/etc/orca-host/env.tpl`, then `/opt/orca/env.tpl`, both optional, the last line of a variable winning, every `{{ op://Vault/Item/field }}` resolved by `op inject`. `/var/lib/orca/env.image` records the image it was rendered from. `op` runs from its own image, as compose runs from `docker:cli`: Flatcar installs nothing.
 
-The chain is the VM's GCP identity → one secret → one token → one vault, read-only. `op_vault` is a technical vault: the tokens agents read, no password data. A service account is scoped per vault, not per item, so every reference in the note has to resolve inside that vault — which is also what keeps a token in one item instead of copied into the note.
+**Configuration, not notes.** What a host is — its name, project and zone in `terraform.tfvars`, the variables it starts with in `.env.tpl` — is configuration, and most of it is not secret. It is a file, versioned in the person's own repository, as a project versions its `.env.tpl`: the secrets in it are references, and a reference is not a secret. 1Password holds the values and nothing else. Two places for `.env.tpl`, because two kinds of person: one with an image of their own `COPY`s it to `/etc/orca-host/env.tpl`, and reaches the host with a push, since the VM reads the file from the image it is about to run and knows that image already (`orca_image`); one on the base image keeps it on the laptop, and Terraform carries it, as it carries `compose.yaml` — a reference may sit in Ignition and in the state. The laptop's file comes last so a host can override what its image says.
 
-What this buys is rotation. A token changed in 1Password reaches the host with `make restart`; a new variable is a line in the note and the same restart. Nothing is frozen at the moment it was uploaded, and the laptop is out of the loop — `make env` resolves the same note, with the person's own account, for a stack run there. The service-account token itself expires: renewing it is the one secret placed by hand, a new token in the item then `make secret`. Until that is done the host does not come up — `orca-env.service` fails rather than start the stack on the env file it rendered last time, and says so on the serial console. Restarting the two units is the way back.
+The chain is the VM's GCP identity → one secret → one token → one vault, read-only. `op_vault` is a technical vault: the tokens agents read, no password data. A service account is scoped per vault, not per item, so every reference in `.env.tpl` has to resolve inside that vault.
 
-**The token in a session.** `op` is in the image, and `render-env` appends `OP_SERVICE_ACCOUNT_TOKEN` to the file it writes: the sessions read the same read-only vault, with the token the VM already holds rather than a copy the note would read back from the vault. A project whose `.env` lives in 1Password is then brought up by its own worktree setup hook — `op inject -i .env.tpl -o .env` — with no step on a laptop, and a tool a session is asked to set up can fetch its own credential.
+What this buys is rotation. A token changed in 1Password reaches the host with `make restart`; a new variable is a line in `.env.tpl`: in the person's own image, a push, and the redeploy renders it; on the laptop, a rebuild, since Ignition carries it. Nothing is frozen at the moment it was uploaded — `make env` resolves the same files, with the person's own account, for a stack run there. The service-account token itself expires: renewing it is the one secret placed by hand, a new token in the item then `make secret`. Until that is done the host does not come up — `orca-env.service` fails rather than start the stack on the env file it rendered last time, and says so on the serial console. Restarting the two units is the way back.
+
+**The token in a session.** `op` is in the image, and `render-env` appends `OP_SERVICE_ACCOUNT_TOKEN` to the file it writes: the sessions read the same read-only vault, with the token the VM already holds rather than a copy `.env.tpl` would read back from the vault. A project whose `.env` lives in 1Password is then brought up by its own worktree setup hook — `op inject -i .env.tpl -o .env` — with no step on a laptop, and a tool a session is asked to set up can fetch its own credential.
 
 The cost is plain: every session, and everything a session runs, reads that vault. It is bounded by what is in the vault, which is the reason the vault is technical, read-only and separate. The same env file already carries `GH_TOKEN` and `CLAUDE_CODE_OAUTH_TOKEN` into every session, so this adds credentials of the same order next to those, not a new kind of exposure — the judgement to make is what goes in the vault, not whether the file has secrets in it.
 
@@ -132,10 +134,11 @@ Host <name>
 | Change | Action |
 |---|---|
 | a new image under the same tag | nothing: the host redeploys itself within five minutes |
-| a token rotated in 1Password, a new variable in the env note, a new secret version | `make restart` |
-| `compose.yaml`, `terraform/ignition.yaml.tftpl`, `orca_image` | `terraform -chdir=terraform apply -replace=google_compute_instance.vm` |
+| a token rotated in 1Password, a new secret version | `make restart` |
+| `.env.tpl` in the person's own image | nothing: the redeploy renders the env file again |
+| `compose.yaml`, `terraform/ignition.yaml.tftpl`, `orca_image`, the laptop's `.env.tpl` | `make rebuild` |
 
-`orca-update.timer` restarts `orca.service` every five minutes. `/opt/orca/up` is `--pull always`, and compose recreates a container only when the digest it pulled differs from the running one, so a tick with nothing new is a manifest request and no more, and a merge to `main` reaches the host without anyone doing anything. The cost is that a redeploy ends live terminals, and no one chose its moment: a host following a tag takes what the tag serves. A host pinned to `sha-<sha>` in `orca_image` never moves, and the timer then only ever costs the manifest request.
+`orca-update.timer` restarts `orca.service` every five minutes. `/opt/orca/up` pulls the image, and compose recreates a container only when that image differs from the running one, so a tick with nothing new is a manifest request and no more, and a merge to `main` reaches the host without anyone doing anything. The cost is that a redeploy ends live terminals, and no one chose its moment: a host following a tag takes what the tag serves. A host pinned to `sha-<sha>` in `orca_image` never moves, and the timer then only ever costs the manifest request.
 
 Ignition runs at first boot only, and `compose.yaml` is baked into it. A rebuild keeps the data disk: checkouts, Tailscale identity, pairing, Docker's images and the volumes of project stacks. Only Flatcar is new.
 

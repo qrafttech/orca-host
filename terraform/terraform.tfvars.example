@@ -1,4 +1,4 @@
-# The body of the 1Password Secure Note `orca-host-tfvars`; `make` writes it to terraform.tfvars (gitignored) when absent.
+# Copy to terraform/terraform.tfvars (gitignored), or keep it in your own repository and point TFVARS at it. No secret.
 name           = "orca-host"
 project        = "my-gcp-project"
 zone           = "europe-west9-b"
