@@ -119,6 +119,35 @@ Everything under `/var/lib/orca` survives a rebuild, Docker's root included: not
 
 **Sizing.** `machine_type` defaults to `e2-standard-4`, 16 GB of RAM: about 4 GB per compose stack, so three stacks and Orca. E2, N2 or N2D only: a regional disk attaches to no other series.
 
+**Cost.** The VM is the bill; the rest is small. An `n2d-standard-4` host in Paris (`europe-west9`), at list prices:
+
+| Line | Unit price | USD / month |
+|---|---|---|
+| vCPU, 4 × 730 h | $0.0319 / vCPU-h | ~93 |
+| RAM, 16 GB × 730 h | $0.00428 / GB-h | ~50 |
+| data disk, 50 GB `pd-balanced`, regional | $0.26 / GB-month | ~13 |
+| boot disk, 20 GB `pd-balanced`, zonal | $0.116 / GB-month | ~2.3 |
+| public IP, in use | $0.005 / h | ~3.7 |
+| snapshots, state bucket, the secret | | a few dollars at most |
+
+About $160 a month, $5 a day. N2D's sustained-use discount takes up to 20% off the VM over a full month; E2 has none. The regional disk is 2.2× the zonal price: that is what a zone out of stock being an apply costs. The VM line is the one to move: `e2-standard-4` is about $113, Spot about a third of the on-demand price but preemptible, a one-year commitment about 40% off. Stopped, a host costs its disks.
+
+Prices move; the Cloud Billing Catalog API has the current ones. Compute Engine is service `6F81-5844-456A`, and its SKU list is paginated:
+
+```
+T=$(gcloud auth print-access-token); tok=""
+while :; do
+  r=$(curl -s -H "Authorization: Bearer $T" "https://cloudbilling.googleapis.com/v1/services/6F81-5844-456A/skus?currencyCode=USD&pageSize=5000&pageToken=$tok")
+  echo "$r" | jq -e .error >/dev/null && { echo "$r" | jq .error; break; }
+  echo "$r" | jq -r '.skus[] | select(.serviceRegions | index("europe-west9"))
+    | select(.description | test("N2D AMD Instance (Core|Ram)|Balanced PD|External IP"; "i"))
+    | [.description, .category.usageType, (.pricingInfo[0].pricingExpression.tieredRates[-1].unitPrice | (.units|tonumber) + .nanos/1e9), .pricingInfo[0].pricingExpression.usageUnitDescription] | @tsv'
+  tok=$(echo "$r" | jq -r '.nextPageToken // ""'); [ -z "$tok" ] && break
+done
+```
+
+What a project holds: `gcloud compute instances|disks|snapshots|addresses list`, `gcloud storage ls`, `gcloud secrets list`, each with `--project`. What it was actually billed: the console, Billing → Reports, filtered on the project, grouped by SKU, credits unticked — a trial account otherwise shows $0.
+
 **Network.** Own VPC, nothing reaches the VM from the internet; the public IP is for egress only. SSH answers on the tailnet address: `ssh core@<name>`. One firewall rule, the break-glass for when the stack is down: SSH from Google's IAP range only, `gcloud compute ssh <name> --tunnel-through-iap`, which needs an IAM identity of the project. The serial console (`gcloud compute connect-to-serial-port`) shows the boot log, including both units' output.
 
 **Host keys.** Every rebuild is a new host key, and the tailnet already authenticates the peer, so the `Makefile` skips the host-key check for this host. For your own `ssh core@<name>`, the same in `~/.ssh/config`:
