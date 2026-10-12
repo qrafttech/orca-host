@@ -36,7 +36,7 @@ variable "data_disk_zones" {
 }
 
 variable "machine_type" {
-  description = "About 4 GB RAM per Compose stack: e2-standard-4 = 3 stacks and Orca."
+  description = "About 4 GB RAM per Compose stack: e2-standard-4 = 3 stacks and Orca. E2, N2 or N2D: the regional data disk attaches to no other series."
   type        = string
   default     = "e2-standard-4"
 }

@@ -165,6 +165,7 @@ Every time `main` moves here, you get a pull request bumping that digest, your C
 | a token in 1Password | nothing until the next restart | `make restart` |
 | your settings repository: permissions, `CLAUDE.md`, skills, `config/mcp.json` | pulled at every start of the container | `make restart` |
 | `compose.yaml`, `terraform/ignition.yaml.tftpl`, `orca_image`, the laptop's `.env.tpl` | nothing: Ignition runs at first boot only | `make rebuild` |
+| `zone`, to the other of `data_disk_zones`: the VM's zone is out of stock, or down | a new VM there, the same data disk | `make apply` |
 
 - **Redeploy**: the host sees a new image under the tag it follows and restarts its container on it.
 - **Restart** (`make restart`): the env file rendered again from `.env.tpl` and 1Password, the image pulled, the container restarted even when neither changed, so the entrypoint reads `ENV_TEMPLATE` and the settings repository again.
