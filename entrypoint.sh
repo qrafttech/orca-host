@@ -2,7 +2,7 @@
 # orca-host entrypoint. Starts as root: gives `orca` the Docker socket's group and its home, then re-executes
 # as `orca` and runs `orca serve`. Environment: PAIRING_ADDRESS (optional: default is the tailscale0 address,
 # waited for), ORCA_PORT (6768), ORCA_PAIRING (desktop | mobile).
-# shellcheck disable=SC2016  # $m, $s, $p below are jq variables
+# shellcheck disable=SC2016  # $m, $s below are jq variables
 set -euo pipefail
 
 : "${ORCA_PORT:=6768}"
@@ -50,19 +50,11 @@ if [ -n "${CLAUDE_SETTINGS_REPO:-}" ]; then
   [ ! -f "$file" ] || settings --slurpfile s "$file" '.permissions = $s[0].permissions'
   [ -e .claude/CLAUDE.md ] || [ ! -f "$repo/CLAUDE.md" ] || ln -s "$repo/CLAUDE.md" .claude/CLAUDE.md
   [ -e .claude/skills ] || [ ! -d "$repo/.claude/skills" ] || ln -s "$repo/.claude/skills" .claude/skills
-  # User-level MCP servers (config/mcp.json in the settings repo): its servers overwrite those of the same name;
-  # a name it declared at the previous start and no longer does is removed (the names are kept in
-  # .claude/mcp-servers.json); a server added by hand under another name is left alone.
-  mcpfile="$repo/config/mcp.json" state=.claude/mcp-servers.json
-  if [ ! -d "$repo/.git" ]; then :
-  elif ! m=$(if [ -f "$mcpfile" ]; then jq -c '.mcpServers // {}' "$mcpfile"; else echo '{}'; fi); then
-    echo "settings repo: config/mcp.json is not valid JSON, MCP servers left as they are"
-  else
-    [ -f "$state" ] || echo '[]' > "$state"
-    jq --argjson m "$m" --slurpfile p "$state" \
-      '.mcpServers = ((.mcpServers // {}) | with_entries(select(.key | IN($p[0][]) | not))) + $m' \
+  # User-level MCP servers: exactly those of config/mcp.json in the settings repo, replaced at every start.
+  mcpfile="$repo/config/mcp.json"
+  if [ -f "$mcpfile" ]; then
+    jq --slurpfile m "$mcpfile" '.mcpServers = ($m[0].mcpServers // {})' \
       .claude.json > .claude.json.tmp && mv .claude.json.tmp .claude.json
-    jq -n --argjson m "$m" '$m | keys' > "$state"
   fi
 fi
 
