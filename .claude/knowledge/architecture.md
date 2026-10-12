@@ -8,7 +8,7 @@ laptop / phone ──tailnet──▶ VM (Flatcar Container Linux, Ignition)
                              │    home/       /home/orca: checkouts, ~/.claude, Orca state
                              │    tailscale/  node identity: same tailnet IP after a rebuild
                              │    docker/     Docker's data root: images, build cache, the volumes of project stacks
-                             │    env         the env file, rendered from .env.tpl and 1Password at every boot
+                             │    env         the env file, rendered from .env.tpl and 1Password: every boot, restart, new image
                              └─ compose.yaml
                                   ├─ tailscale   host network, /dev/net/tun
                                   └─ orca-host   host network, `orca serve --pairing-address <tailnet IP>`
@@ -58,7 +58,7 @@ Why not a boot-time installer — the entrypoint reading a list of declared URLs
 - **Reproducible.** A `docker build` from a digest-pinned base gives the same image whoever runs it; a volume gives whatever it already held. Two hosts on the same image and the same settings repository could differ.
 - **Auditable.** `docker history` and a tag say what is installed. A volume only says it by being read.
 - **Pinned in time.** The digest in the `FROM` and the checksums in the `RUN` are fixed when the build runs, not re-resolved against a release page months later.
-- **No package format to maintain.** Each new release shape (a bare binary, a `.tar.gz`, a `.zip`, a nested path) was a special case in shell. `RUN` is the whole vocabulary, and it is Docker's, not ours.
+- **No package format to maintain.** Each release shape (a bare binary, a `.tar.gz`, a `.zip`, a nested path) would be a special case in shell. `RUN` is the whole vocabulary, and it is Docker's, not ours.
 - **It is what the VM is for.** Flatcar is immutable so that nothing is installed on the host; installing into a volume at every start put the moving parts back.
 
 The cost is a rebuild for a new tool instead of a restart, and a derived image going stale when the base moves. A digest-pinned `FROM` plus Dependabot in the derived repository turns the second into a pull request per base build. Private derived images are not supported: `/opt/orca/up` does no registry login, so a derived image must be public — it holds no secret, only software that was already downloadable.
@@ -71,7 +71,7 @@ The cost is a rebuild for a new tool instead of a restart, and a derived image g
 
 `compose.yaml` is the whole contract of a host: every personal value is a variable, listed at the top of the file, from one env file. The file is read twice: by compose for the declared variables, and by the `orca-host` container as a whole (`env_file`), so a new variable needs no compose change.
 
-- `tailscale`: host network, `NET_ADMIN`, `/dev/net/tun`. `TS_AUTHKEY` is read on the first start only (`TS_AUTH_ONCE`); the node identity then lives in `<ORCA_DATA>/tailscale`, so the host keeps its tailnet IP across rebuilds.
+- `tailscale`: host network, `NET_ADMIN`, `/dev/net/tun`. `TS_AUTHKEY` is read on the first start only (`TS_AUTH_ONCE`), for a node tagged `orca-host`, which never expires; the node identity then lives in `<ORCA_DATA>/tailscale`, so the host keeps its tailnet IP across rebuilds.
 - `orca-host`: host network, `init: true`. `/home/orca` is bind-mounted from `<ORCA_DATA>/home` at the same path, so a project's compose file can bind-mount `/home/orca/<project>/...`. The Docker socket is mounted: project stacks are sibling containers on the VM's Docker.
 
 Stopping the stack ends live terminals, as a service restart does.
@@ -96,7 +96,7 @@ The VM is Flatcar Container Linux: immutable, Docker built in, nothing installed
 
 **Secrets.** Two hops, one vault. Secret Manager holds a single line, a 1Password service-account token; Terraform creates that secret empty and `make secret` adds the versions, so no secret ever passes through Terraform or its state. At every start of `orca-env.service` the VM reads it with its own GCP identity — the only permission that identity has — and renders the env file from `.env.tpl`: the image's `/etc/orca-host/env.tpl`, then `/opt/orca/env.tpl`, both optional, the last line of a variable winning, every `{{ op://Vault/Item/field }}` resolved by `op inject`. `/var/lib/orca/env.image` records the image it was rendered from. `op` runs from its own image, as compose runs from `docker:cli`: Flatcar installs nothing.
 
-**Configuration, not notes.** What a host is — its name, project and zone in `terraform.tfvars`, the variables it starts with in `.env.tpl` — is configuration, and most of it is not secret. It is a file, versioned in the person's own repository, as a project versions its `.env.tpl`: the secrets in it are references, and a reference is not a secret. 1Password holds the values and nothing else. Two places for `.env.tpl`, because two kinds of person: one with an image of their own `COPY`s it to `/etc/orca-host/env.tpl`, and reaches the host with a push, since the VM reads the file from the image it is about to run and knows that image already (`orca_image`); one on the base image keeps it on the laptop, and Terraform carries it, as it carries `compose.yaml` — a reference may sit in Ignition and in the state. Ignition writes it at first boot only, so `make restart` copies it again before rendering: a new line is a restart, not a rebuild. The laptop's file comes last so a host can override what its image says.
+**Configuration.** What a host is — its name, project and zone in `terraform.tfvars`, the variables it starts with in `.env.tpl` — is configuration, and most of it is not secret. It is a file, versioned in the person's own repository, as a project versions its `.env.tpl`: the secrets in it are references, and a reference is not a secret. 1Password holds the values and nothing else. Two places for `.env.tpl`, because two kinds of person: one with an image of their own `COPY`s it to `/etc/orca-host/env.tpl`, and reaches the host with a push, since the VM reads the file from the image it is about to run and knows that image already (`orca_image`); one on the base image keeps it on the laptop, and Terraform carries it, as it carries `compose.yaml` — a reference may sit in Ignition and in the state. Ignition writes it at first boot only, so `make restart` copies it again before rendering: a new line is a restart, not a rebuild. The laptop's file comes last so a host can override what its image says.
 
 The chain is the VM's GCP identity → one secret → one token → one vault, read-only. `op_vault` is a technical vault: the tokens agents read, no password data. A service account is scoped per vault, not per item, so every reference in `.env.tpl` has to resolve inside that vault.
 
@@ -115,9 +115,9 @@ Claude Code's own permission classifier refuses `op` in `auto` mode, as credenti
 | boot | `boot_disk_gb`, 20 GB by default | Flatcar, nothing else | replaced with the VM |
 | data | `data_disk_gb`, 50 GB by default | `/var/lib/orca`: `home/` (checkouts, worktrees, `~/.claude`, Orca state), `tailscale/` (node identity), `docker/` (Docker's data root: the images, the containers, the build cache, the named volumes of project stacks), `env` | kept |
 
-Everything under `/var/lib/orca` survives a rebuild, Docker's root included: nothing is pulled again, a worktree's `postgres_data` is still there. Docker's root is there by `daemon.json`, not by Docker's default (`/var/lib/docker`, on the boot disk): once Flatcar has its share, the boot disk is too small for one project's images, and what it held went with the VM. A database in a Docker volume is a worktree database all the same: its setup hook creates it, its archive script removes it (`docker compose down -v`), nothing migrates it. The data disk is `pd-balanced`, `prevent_destroy`, daily snapshots at 03:00 (Docker's root included), seven kept, kept if the disk is deleted; it grows live, never shrinks. Docker is what fills it: `docker system df` says what takes it, `docker system prune` from `make shell` gives back what no container uses (volumes only with `--volumes`).
+Everything under `/var/lib/orca` survives a rebuild, Docker's root included: nothing is pulled again, a worktree's `postgres_data` is still there. Docker's root is there by `daemon.json`, not by Docker's default (`/var/lib/docker`, on the boot disk): once Flatcar has its share, the boot disk is too small for one project's images, and what it held went with the VM. A database in a Docker volume is a worktree database all the same: its setup hook creates it, its archive script removes it (`docker compose down -v`), nothing migrates it. The data disk is `pd-balanced` and regional, replicated in the two `data_disk_zones`: the VM runs in either, so a zone out of stock or down is a new `zone` and a `make apply`, the disk untouched. It is `prevent_destroy`, daily snapshots at 03:00 (Docker's root included), seven kept, kept if the disk is deleted; it grows live, never shrinks. Docker is what fills it: `docker system df` says what takes it, `docker system prune` from `make shell` gives back what no container uses (volumes only with `--volumes`).
 
-**Sizing.** `machine_type` defaults to `e2-standard-4`, 16 GB of RAM: about 4 GB per compose stack, so three stacks and Orca.
+**Sizing.** `machine_type` defaults to `e2-standard-4`, 16 GB of RAM: about 4 GB per compose stack, so three stacks and Orca. E2, N2 or N2D only: a regional disk attaches to no other series.
 
 **Network.** Own VPC, nothing reaches the VM from the internet; the public IP is for egress only. SSH answers on the tailnet address: `ssh core@<name>`. One firewall rule, the break-glass for when the stack is down: SSH from Google's IAP range only, `gcloud compute ssh <name> --tunnel-through-iap`, which needs an IAM identity of the project. The serial console (`gcloud compute connect-to-serial-port`) shows the boot log, including both units' output.
 
@@ -131,12 +131,11 @@ Host <name>
 
 ## Restart or rebuild
 
-| Change | Action |
-|---|---|
-| a new image under the same tag | nothing: the host redeploys itself within five minutes |
-| a token rotated in 1Password, a new secret version, the laptop's `.env.tpl` | `make restart` |
-| `.env.tpl` in the person's own image | nothing: the redeploy renders the env file again |
-| `compose.yaml`, `terraform/ignition.yaml.tftpl`, `orca_image` | `make rebuild` |
+Three ways a change reaches the host; the README, "When you change something", says which one each change takes.
+
+- **Redeploy**: the host sees a new image under the tag it follows and restarts its container on it. The env file is rendered again first, since a new image may carry a new `/etc/orca-host/env.tpl`.
+- **Restart** (`make restart`): the laptop's `.env.tpl` copied to the host, the env file rendered again from it and 1Password, the image pulled, the container restarted even when neither changed, so the entrypoint pulls the settings repository again.
+- **Rebuild** (`make rebuild`, an `apply -replace` of the VM): a new VM, from Ignition.
 
 `orca-update.timer` restarts `orca.service` every five minutes. `/opt/orca/up` pulls the image, and compose recreates a container only when that image differs from the running one, so a tick with nothing new is a manifest request and no more, and a merge to `main` reaches the host without anyone doing anything. The cost is that a redeploy ends live terminals, and no one chose its moment: a host following a tag takes what the tag serves. A host pinned to `sha-<sha>` in `orca_image` never moves, and the timer then only ever costs the manifest request.
 
@@ -144,7 +143,7 @@ Ignition runs at first boot only, and `compose.yaml` is baked into it. A rebuild
 
 ## Pairing
 
-`orca serve` prints one pairing link per process, the desktop one by default. `make pair-desktop` reads the `orca_server_ready` line from the container's logs over SSH and hands `pairing.url` to `orca environment add`. `make pair-mobile` appends `ORCA_PAIRING=mobile` to the env file on the host, restarts the container, shows the new link as a QR code, then on Enter restarts `orca-env` (which refetches the file: the secret again, without `ORCA_PAIRING`) and the container. Two container restarts, at setup time, before any project is cloned. Interrupted between the two, the host stays on the mobile link: `make restart` is the way back.
+`orca serve` prints one pairing link per process, the desktop one by default. `make pair-desktop` reads the `orca_server_ready` line from the container's logs over SSH and hands `pairing.url` to `orca environment add`. `make pair-mobile` appends `ORCA_PAIRING=mobile` to the env file on the host, restarts the container, shows the new link as a QR code, then on Enter restarts `orca-env` (which renders the env file again, without `ORCA_PAIRING`) and the container. Two container restarts, at setup time, before any project is cloned. Interrupted between the two, the host stays on the mobile link: `make restart` is the way back.
 
 The pairing URL is a credential. Both pairings survive restarts and rebuilds.
 
