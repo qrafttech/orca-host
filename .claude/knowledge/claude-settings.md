@@ -9,7 +9,7 @@ Two optional variables in `.env.tpl`, both merged into `~/.claude/settings.json`
   - `permissions` from `CLAUDE_SETTINGS_FILE` (default `settings.json`). Only that key: hooks and status lines point at laptop things.
   - a root `CLAUDE.md`, symlinked to `~/.claude/CLAUDE.md` unless one exists
   - `.claude/skills`, symlinked to `~/.claude/skills` unless one exists
-  - `config/mcp.json`: merged into the user-level MCP servers of `~/.claude.json`, never overwriting a server already present (added by hand, or from a previous merge with local edits). Its `${VAR}` are read from the container's environment: `.env.tpl`.
+  - `config/mcp.json`: the user-level MCP servers of `~/.claude.json`, replaced by its servers at every start: a server changed or removed there is changed or removed on the host. Its `${VAR}` are read from the container's environment: `.env.tpl`.
 
 Neither set: Claude's defaults, it asks.
 
