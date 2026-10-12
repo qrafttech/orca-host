@@ -15,7 +15,7 @@ data "ct_config" "ignition" {
     ssh_key     = var.ssh_public_key
     compose     = file("${path.module}/../compose.yaml")
     env_tpl     = var.env_tpl == "" ? "" : file(var.env_tpl)
-    data_device = "/dev/disk/by-id/scsi-0Google_PersistentDisk_${google_compute_disk.data.name}"
+    data_device = "/dev/disk/by-id/scsi-0Google_PersistentDisk_${google_compute_region_disk.data.name}"
   })
 }
 
@@ -33,8 +33,8 @@ resource "google_compute_instance" "vm" {
   }
 
   attached_disk {
-    source      = google_compute_disk.data.id
-    device_name = google_compute_disk.data.name
+    source      = google_compute_region_disk.data.self_link
+    device_name = google_compute_region_disk.data.name
   }
 
   network_interface {

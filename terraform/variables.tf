@@ -20,9 +20,19 @@ variable "env_tpl" {
 }
 
 variable "zone" {
-  description = "GCP zone."
+  description = "GCP zone of the VM: one of data_disk_zones. Changing it moves the VM, the data disk stays."
   type        = string
   default     = "europe-west9-b"
+  validation {
+    condition     = contains(var.data_disk_zones, var.zone)
+    error_message = "zone must be one of data_disk_zones: the VM attaches the data disk only there."
+  }
+}
+
+variable "data_disk_zones" {
+  description = "The two zones the data disk is replicated in, in the VM's region. Fixed for the disk's life: changing them replaces it."
+  type        = list(string)
+  default     = ["europe-west9-a", "europe-west9-b"]
 }
 
 variable "machine_type" {

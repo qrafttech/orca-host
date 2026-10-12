@@ -1,12 +1,15 @@
 # The data disk outlives the VM: /home/orca, the Tailscale identity, Docker's data root. Daily snapshots, seven kept.
-resource "google_compute_disk" "data" {
-  name = "${var.name}-data"
-  type = "pd-balanced"
-  size = var.data_disk_gb
+# Regional: replicated in two zones, the VM runs in either. A zone out of stock (or down) is a new `zone` and an apply.
+resource "google_compute_region_disk" "data" {
+  name          = "${var.name}-data"
+  region        = local.region
+  replica_zones = var.data_disk_zones
+  type          = "pd-balanced"
+  size          = var.data_disk_gb
 
   lifecycle {
     prevent_destroy = true
-    # A disk restored from a snapshot (another zone, a recovery) is imported as it is: where it came from is history.
+    # A disk restored from a snapshot (a recovery, a migration) is imported as it is: where it came from is history.
     ignore_changes = [snapshot]
   }
   depends_on = [google_project_service.api]
@@ -29,7 +32,8 @@ resource "google_compute_resource_policy" "snapshots" {
   }
 }
 
-resource "google_compute_disk_resource_policy_attachment" "snapshots" {
-  name = google_compute_resource_policy.snapshots.name
-  disk = google_compute_disk.data.name
+resource "google_compute_region_disk_resource_policy_attachment" "snapshots" {
+  name   = google_compute_resource_policy.snapshots.name
+  disk   = google_compute_region_disk.data.name
+  region = local.region
 }
