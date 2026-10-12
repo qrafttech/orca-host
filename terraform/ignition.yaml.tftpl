@@ -54,7 +54,7 @@ storage:
           # Retries until the secret has a version: `make secret` may come after `make apply`.
           set -eu
           image="${orca_image}"
-          secret="projects/${project}/secrets/orca-host-${name}-op-token/versions/latest"
+          secret="projects/${project}/secrets/${name}-op-token/versions/latest"
           docker pull -q "$image" >/dev/null
           tpl=$(docker run --rm --pull never --entrypoint sh "$image" -c \
             '[ ! -f /etc/orca-host/env.tpl ] || cat /etc/orca-host/env.tpl')
