@@ -29,7 +29,7 @@ SSH     := ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o Lo
 # What `make up` runs, the same variable a host uses: `make build`'s output by default, any reference on request.
 ORCA_IMAGE ?= orca-host:dev
 
-.PHONY: build up down secret bootstrap init plan apply pair pair-desktop pair-mobile restart logs shell ssh
+.PHONY: build up down secret bootstrap init plan apply rebuild pair pair-desktop pair-mobile restart logs shell ssh
 # A failed `op inject` (locked vault, missing item) must not leave an empty file that Make then takes as up to date.
 .DELETE_ON_ERROR:
 
@@ -55,7 +55,7 @@ down:
 	docker compose -f compose.yaml -f compose.laptop.yaml --env-file env down
 
 ## host, on GCP
-secret bootstrap init plan apply pair-desktop pair-mobile restart logs shell ssh: $(TFVARS)
+secret bootstrap init plan apply rebuild pair-desktop pair-mobile restart logs shell ssh: $(TFVARS)
 # the pairing URL of the running server, from the last orca_server_ready line of its logs; empty until it is up
 PAIRING_URL = $(SSH) core@$(NAME) docker logs orca-host 2>/dev/null \
 	  | jq -Rr 'fromjson? | select(.type=="orca_server_ready") | .pairing.url' | tail -1
@@ -79,6 +79,9 @@ plan:
 
 apply:              ## bring the host up (or update it)
 	$(TF) apply $(TF_VARS)
+
+rebuild:            ## a new VM from Ignition, the data disk kept: what Ignition carries changed. Ends live terminals.
+	$(TF) apply $(TF_VARS) -replace=google_compute_instance.vm
 
 pair: pair-desktop pair-mobile  ## the desktop client, then the phone, then the server back to its desktop link
 

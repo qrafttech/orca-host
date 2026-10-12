@@ -136,7 +136,7 @@ Host <name>
 | a new image under the same tag | nothing: the host redeploys itself within five minutes |
 | a token rotated in 1Password, a new secret version | `make restart` |
 | `.env.tpl` in the person's own image | nothing: the redeploy renders the env file again |
-| `compose.yaml`, `terraform/ignition.yaml.tftpl`, `orca_image`, the laptop's `.env.tpl` | `terraform -chdir=terraform apply -replace=google_compute_instance.vm` |
+| `compose.yaml`, `terraform/ignition.yaml.tftpl`, `orca_image`, the laptop's `.env.tpl` | `make rebuild` |
 
 `orca-update.timer` restarts `orca.service` every five minutes. `/opt/orca/up` pulls the image, and compose recreates a container only when that image differs from the running one, so a tick with nothing new is a manifest request and no more, and a merge to `main` reaches the host without anyone doing anything. The cost is that a redeploy ends live terminals, and no one chose its moment: a host following a tag takes what the tag serves. A host pinned to `sha-<sha>` in `orca_image` never moves, and the timer then only ever costs the manifest request.
 

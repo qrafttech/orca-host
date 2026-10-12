@@ -140,7 +140,7 @@ COPY .env.tpl /etc/orca-host/env.tpl
 orca_image = "ghcr.io/me/orca-host:main"   # terraform.tfvars
 ```
 
-That is an Ignition change, so once: `terraform -chdir=terraform apply -replace=google_compute_instance.vm`. From then on a new build under the same tag needs nothing: the host checks the tag every five minutes and redeploys itself when the digest has moved, as for any other image change.
+That is an Ignition change, so once: `make rebuild`. From then on a new build under the same tag needs nothing: the host checks the tag every five minutes and redeploys itself when the digest has moved, as for any other image change.
 
 **Keeping up with the base.** Pin the `FROM` to a digest, as above, and let Dependabot watch it — in your repository, `.github/dependabot.yml`:
 
@@ -164,7 +164,7 @@ Every time `main` moves here, you get a pull request bumping that digest, your C
 | `.env.tpl` in your own image | your CI builds; the host redeploys within five minutes and renders its env file again | nothing |
 | a token in 1Password | nothing until the next restart | `make restart` |
 | your settings repository: permissions, `CLAUDE.md`, skills, `config/mcp.json` | pulled at every start of the container | `make restart` |
-| `compose.yaml`, `terraform/ignition.yaml.tftpl`, `orca_image`, the laptop's `.env.tpl` | nothing: Ignition runs at first boot only | `terraform -chdir=terraform apply -replace=google_compute_instance.vm` |
+| `compose.yaml`, `terraform/ignition.yaml.tftpl`, `orca_image`, the laptop's `.env.tpl` | nothing: Ignition runs at first boot only | `make rebuild` |
 
 - **Redeploy**: the host sees a new image under the tag it follows and restarts its container on it.
 - **Restart** (`make restart`): the env file rendered again from `.env.tpl` and 1Password, the image pulled, the container restarted even when neither changed, so the entrypoint reads `ENV_TEMPLATE` and the settings repository again.
