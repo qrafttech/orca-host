@@ -166,7 +166,7 @@ systemd:
         [Install]
         WantedBy=multi-user.target
     # A merge to main publishes a new image under the tag this host follows, and nothing on the VM would know.
-    # The check is the redeploy: `/opt/orca/up` is `--pull always`, and compose recreates a container only when
+    # The check is the redeploy: `/opt/orca/up` pulls the tag, and compose recreates a container only when
     # the digest it pulled differs from the running one. A tick with nothing new is a manifest request and no more.
     # Restarting orca.service rather than calling `up` keeps the environment and the image prune in one place.
     # This ends live terminals when it does fire, which is the point of following a tag: see architecture.md.

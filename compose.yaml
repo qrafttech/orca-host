@@ -1,5 +1,5 @@
 # orca-host stack: Tailscale + Orca, both on the host's network. Everything personal comes from one env file,
-# resolved from .env.tpl (README, "Configure your host"), read twice: by compose for the values below (`:?` = required, `:-` = default), and by the orca-host container
+# resolved from .env.tpl (README, Install), read twice: by compose for the values below (`:?` = required, `:-` = default), and by the orca-host container
 # as a whole, so a new variable needs no change here.
 #   ORCA_ENV_FILE=<file> docker compose --env-file <file> up -d
 # The variables below are the contract of a host.
