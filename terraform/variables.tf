@@ -9,8 +9,14 @@ variable "project" {
 }
 
 variable "op_vault" {
-  description = "The 1Password vault the host renders its env note from: a technical vault, holding the tokens agents read and no password data. The host's service account is scoped to this one vault, read-only, so every {{ op:// }} reference in the note must live in it."
+  description = "The 1Password vault the host reads: a technical vault, holding the tokens agents read and no password data. The host's service account is scoped to this one vault, read-only, so every {{ op:// }} reference in .env.tpl must live in it. Read by the Makefile, for `make secret`; the VM only ever sees the token."
   type        = string
+}
+
+variable "env_tpl" {
+  description = "Path to the local .env.tpl, empty for none. Its content goes into Ignition, read by the host after the image's /etc/orca-host/env.tpl, so a variable set in both takes the local value. References, not values: Ignition and the state may carry it. The Makefile sets it when the file exists."
+  type        = string
+  default     = ""
 }
 
 variable "zone" {

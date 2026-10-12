@@ -1,5 +1,6 @@
 # per-person values and local state
 terraform/terraform.tfvars
+.env.tpl
 terraform/.terraform/
 terraform/*.tfstate*
 # the env file rendered by `make env`

@@ -1,48 +1,48 @@
 # orca-host, laptop side. Needs: docker, terraform, gcloud, op (1Password CLI), jq, ssh, qrencode, the Orca desktop CLI.
-# The two per-person files are gitignored and come from 1Password when absent: terraform/terraform.tfvars is the
-# body of a Secure Note named orca-host-tfvars, the env file of one named orca-host, both in the vault named by
-# `op_vault` in the tfvars (override for the very first fetch: `make OP_VAULT="My Vault" plan`, or export it).
-# Edit the local copies freely; `rm` one to refetch it.
-# A line of the env note may point at another item, `FOO_TOKEN={{ op://Vault/Item/field }}`: `op inject` resolves
-# it, so a token that other tools use too lives once, in its own item, not copied into the note.
-# Laptop and host resolve the same note, in the same vault: `make env` here with your own account, the VM at every
-# boot with a service account. What the host needs from this laptop is that account's token — `make secret`, once.
-TFVARS  := terraform/terraform.tfvars
-# `=`, not `:=`: expanded in recipes, after the $(TFVARS) rule has fetched the file. At parse time it may not exist.
-NAME     = $(shell sed -n 's/^name *= *"\(.*\)".*/\1/p' $(TFVARS))
-PROJECT  = $(shell sed -n 's/^project *= *"\(.*\)".*/\1/p' $(TFVARS))
-ZONE     = $(or $(shell sed -n 's/^zone *= *"\(.*\)".*/\1/p' $(TFVARS)),europe-west9-b)
+# Two per-person files, plain configuration, versioned wherever you keep your host (the repository of your own image
+# is the natural place) or kept here, gitignored: TFVARS, the host's name, project, zone, SSH key; ENV_TPL, the
+# variables the host starts with, `VAR=value` per line, a secret as a `{{ op://Vault/Item/field }}` reference.
+# A reference is not a secret: 1Password holds the values, and nothing else.
+# The host reads the image's /etc/orca-host/env.tpl, then ENV_TPL (Terraform carries it), and resolves both at every
+# boot with a service account. `make env` does the same here, with your own account. What the host needs from this
+# laptop is that account's token — `make secret`, once.
+TFVARS  ?= terraform/terraform.tfvars
+ENV_TPL ?= .env.tpl
+# `=`, not `:=`: expanded in recipes, once $(TFVARS) is known to exist. At parse time it may not.
+NAME     = $(shell sed -n 's/^name *= *"\(.*\)".*/\1/p' $(TFVARS) 2>/dev/null)
+PROJECT  = $(shell sed -n 's/^project *= *"\(.*\)".*/\1/p' $(TFVARS) 2>/dev/null)
+ZONE     = $(or $(shell sed -n 's/^zone *= *"\(.*\)".*/\1/p' $(TFVARS) 2>/dev/null),europe-west9-b)
 REGION   = $(shell echo $(ZONE) | sed 's/-[a-z]$$//')
 BUCKET   = $(PROJECT)-tfstate
 SECRET   = orca-host-$(NAME)-op-token
-# The vault is named once, in the tfvars, because the host needs it too. While fetching the tfvars note itself
-# that file does not exist yet: OP_VAULT then falls back to the environment, or to Private.
-OP_VAULT ?= $(or $(shell sed -n 's/^op_vault *= *"\(.*\)".*/\1/p' $(TFVARS) 2>/dev/null),Private)
-OP        = op://$(OP_VAULT)/orca-host/notesPlain
-OP_TFVARS = op://$(OP_VAULT)/orca-host-tfvars/notesPlain
+OP_VAULT  = $(shell sed -n 's/^op_vault *= *"\(.*\)".*/\1/p' $(TFVARS) 2>/dev/null)
 OP_TOKEN  = op://$(OP_VAULT)/orca-host-service-account/credential
-READ_ENV  = op read "$(OP)" | op inject
+# The image's template, then the local one; the last line of a variable wins, as on the host (render-env).
+READ_TPL  = { docker run --rm --entrypoint sh $(ORCA_IMAGE) -c '[ ! -f /etc/orca-host/env.tpl ] || cat /etc/orca-host/env.tpl'; \
+	      [ ! -f $(ENV_TPL) ] || cat $(ENV_TPL); }
+LAST_WINS = awk -F= '/^[A-Za-z_][A-Za-z0-9_]*=/ { if (!($$1 in v)) k[n++] = $$1; v[$$1] = $$0 } END { for (i = 0; i < n; i++) print v[k[i]] }'
 TF      := terraform -chdir=terraform
+# TFVARS by path, wherever it is; ENV_TPL only when it exists, its content goes into Ignition
+TF_VARS  = -var-file=$(abspath $(TFVARS)) $(if $(wildcard $(ENV_TPL)),-var env_tpl=$(abspath $(ENV_TPL)))
 # Every rebuild is a new host key, and the tailnet already authenticates the peer: no host-key check for this host.
 SSH     := ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR
 # What `make up` runs, the same variable a host uses: `make build`'s output by default, any reference on request.
 ORCA_IMAGE ?= orca-host:dev
 
 .PHONY: build up down secret bootstrap init plan apply pair pair-desktop pair-mobile restart logs shell ssh
-# A failed `op read` (locked vault, missing note) must not leave an empty file that Make then takes as up to date.
+# A failed `op inject` (locked vault, missing item) must not leave an empty file that Make then takes as up to date.
 .DELETE_ON_ERROR:
 
-## the per-person files, from 1Password when absent
-# Both recipes pipe, and `sh` has no pipefail: a failed `op read` would exit 0 through `op inject` and write an
+# Both recipes pipe, and `sh` has no pipefail: a failed `op` would exit 0 through the next command and write an
 # empty file, or upload an empty secret version. bash for these two, so the pipeline fails with its first command.
 env secret: SHELL := /bin/bash
 env secret: .SHELLFLAGS := -o pipefail -c
 
-env:                ## the env file, into ./env
-	$(READ_ENV) > $@ && chmod 600 $@
+env:                ## the env file, resolved from the templates with your own account, into ./env. `rm env` to redo it.
+	$(READ_TPL) | op inject | $(LAST_WINS) > $@ && chmod 600 $@
 
-$(TFVARS):          ## the host's name, project, zone, SSH key, into terraform/terraform.tfvars
-	op read "$(OP_TFVARS)" > $@
+$(TFVARS):
+	@echo "$@ is missing: fill in terraform/terraform.tfvars.example there, or point TFVARS at yours"; exit 1
 
 ## image and stack, on this laptop
 build:              ## build the image for this machine's architecture, as orca-host:dev
@@ -75,10 +75,10 @@ init:               ## terraform init against the state bucket, one prefix per h
 	$(TF) init -backend-config=bucket=$(BUCKET) -backend-config=prefix=orca-host/$(NAME)
 
 plan:
-	$(TF) plan
+	$(TF) plan $(TF_VARS)
 
 apply:              ## bring the host up (or update it)
-	$(TF) apply
+	$(TF) apply $(TF_VARS)
 
 pair: pair-desktop pair-mobile  ## the desktop client, then the phone, then the server back to its desktop link
 
@@ -90,7 +90,7 @@ pair-desktop:       ## read the pairing URL over the tailnet, pair the desktop c
 
 # `orca serve` prints one pairing link per process, so the phone's is a restart with ORCA_PAIRING=mobile appended
 # to the host's env file, and a second one that renders it again (orca-env is a oneshot: restarting it re-runs the
-# rendering, from the note, without ORCA_PAIRING). Two container restarts, at setup time, before any project is
+# rendering, from the templates, without ORCA_PAIRING). Two container restarts, at setup time, before any project is
 # cloned. Interrupted between the two, the host stays on the mobile link: `make restart` is the way back.
 pair-mobile:        ## restart the server on its mobile link, show it as a QR for the phone, restart back
 	printf '\nORCA_PAIRING=mobile\n' | $(SSH) core@$(NAME) 'sudo tee -a /var/lib/orca/env >/dev/null && sudo systemctl restart orca'

@@ -1,6 +1,6 @@
 # Butane config for Flatcar, rendered by Terraform, applied by Ignition on the VM's first boot.
-# Everything the host is: an SSH key, the data disk, three files under /opt/orca (/etc is noexec on Flatcar),
-# Docker's data root on the data disk, two units. Nothing else is ever written to it.
+# Everything the host is: an SSH key, the data disk, three files under /opt/orca (/etc is noexec on Flatcar) and
+# the local .env.tpl if there is one, Docker's data root on the data disk, the units. Nothing else is ever written.
 variant: flatcar
 version: 1.0.0
 
@@ -30,21 +30,36 @@ storage:
       contents:
         inline: |
           ${indent(10, compose)}
+%{ if env_tpl != "" ~}
+    # The local .env.tpl, from the laptop: references, not values, so Ignition and the state may carry it.
+    - path: /opt/orca/env.tpl
+      mode: 0600
+      contents:
+        inline: |
+          ${indent(10, env_tpl)}
+%{ endif ~}
     - path: /opt/orca/render-env
       mode: 0755
       contents:
         inline: |
           #!/bin/sh
           # Writes /var/lib/orca/env, the file the stack starts from. Runs on the VM, before any container exists.
-          # Secret Manager holds one line, a 1Password service-account token. The VM reads it with its own GCP
-          # identity, then op reads the note `orca-host` from the vault that token is scoped to and resolves its
-          # {{ op:// }} references. Rotate a token in 1Password, restart this unit: that is the whole point.
-          # op runs from its own image: Flatcar installs nothing. The token itself goes into the file too, so the
-          # sessions' own `op` reads the same vault.
+          # The template is .env.tpl, `VAR=value` per line, a secret as a {{ op:// }} reference: first the image's
+          # /etc/orca-host/env.tpl (a derived image COPYs it there), then /opt/orca/env.tpl (from Terraform), both
+          # optional; a variable set in both takes the local value. Secret Manager holds one line, a 1Password
+          # service-account token: the VM reads it with its own GCP identity, op resolves the references with it.
+          # Rotate a token in 1Password, restart this unit: that is the whole point. op runs from its own image:
+          # Flatcar installs nothing. The token itself goes into the file too, so the sessions' own `op` reads the
+          # same vault. /var/lib/orca/env.image records the image rendered from: `up` renders again when it moves.
           # Retries until the secret has a version: `make secret` may come after `make apply`.
           set -eu
+          image="${orca_image}"
           secret="projects/${project}/secrets/orca-host-${name}-op-token/versions/latest"
-          note="op://${op_vault}/orca-host/notesPlain"
+          docker pull -q "$image" >/dev/null
+          tpl=$(docker run --rm --pull never --entrypoint sh "$image" -c \
+            '[ ! -f /etc/orca-host/env.tpl ] || cat /etc/orca-host/env.tpl')
+          [ ! -f /opt/orca/env.tpl ] || tpl=$(printf '%s\n' "$tpl"; cat /opt/orca/env.tpl)
+          [ -n "$tpl" ] || { echo "no .env.tpl: neither /etc/orca-host/env.tpl in $image nor /opt/orca/env.tpl"; exit 1; }
           # a pipeline's status is jq's, which is happy with an empty curl: test the values, not the commands
           while :; do
             access=$(curl -sf -H 'Metadata-Flavor: Google' \
@@ -59,14 +74,18 @@ storage:
           # a token pasted into the console by hand may carry a newline; op wants the value alone
           OP_SERVICE_ACCOUNT_TOKEN=$(echo "$data" | base64 -d | tr -d '\r\n')
           export OP_SERVICE_ACCOUNT_TOKEN
-          op() { docker run --rm -i -e OP_SERVICE_ACCOUNT_TOKEN 1password/op:2.39.0 op "$@"; }
           # `sh` has no pipefail: hold the result, write nothing rather than half a file. Failing is the point —
           # the stack must not come up on the env file of the last boot. `make secret` is the way back.
-          rendered=$(op read "$note" | op inject)
-          [ -n "$rendered" ] || { echo "$note rendered empty: expired token, or an item it cannot read"; exit 1; }
+          rendered=$(printf '%s\n' "$tpl" \
+            | docker run --rm -i -e OP_SERVICE_ACCOUNT_TOKEN 1password/op:2.39.0 op inject)
+          [ -n "$rendered" ] || { echo ".env.tpl rendered empty: expired token, or an item it cannot read"; exit 1; }
           umask 077
-          printf '%s\nOP_SERVICE_ACCOUNT_TOKEN=%s\n' "$rendered" "$OP_SERVICE_ACCOUNT_TOKEN" > /var/lib/orca/env.tmp
+          # the last line of a variable wins: the local file's, over the image's
+          printf '%s\nOP_SERVICE_ACCOUNT_TOKEN=%s\n' "$rendered" "$OP_SERVICE_ACCOUNT_TOKEN" \
+            | awk -F= '/^[A-Za-z_][A-Za-z0-9_]*=/ { if (!($1 in v)) k[n++] = $1; v[$1] = $0 }
+                       END { for (i = 0; i < n; i++) print v[k[i]] }' > /var/lib/orca/env.tmp
           mv /var/lib/orca/env.tmp /var/lib/orca/env
+          docker image inspect -f '{{.Id}}' "$image" > /var/lib/orca/env.image
     - path: /opt/orca/up
       mode: 0755
       contents:
@@ -74,14 +93,19 @@ storage:
           #!/bin/sh
           # Starts, or updates, the stack. Compose runs from the docker:cli image: Flatcar ships none.
           # Both images are public — the docker:cli one, and ORCA_IMAGE: no registry login here.
+          # A new image may carry a new /etc/orca-host/env.tpl: the env file is rendered again before compose
+          # reads it, and compose then runs the image it was rendered from (`--pull missing`, not `always`).
           set -eu
+          docker pull -q "$ORCA_IMAGE" >/dev/null
+          [ "$(docker image inspect -f '{{.Id}}' "$ORCA_IMAGE")" = "$(cat /var/lib/orca/env.image 2>/dev/null)" ] \
+            || /opt/orca/render-env
           exec docker run --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
             -v /opt/orca:/opt/orca:ro \
             -v /var/lib/orca:/var/lib/orca \
             -e TS_HOSTNAME -e ORCA_DATA -e ORCA_IMAGE -e ORCA_ENV_FILE \
             -w /opt/orca docker:29.8.1-cli \
-            docker compose --env-file /var/lib/orca/env up -d --pull always --remove-orphans
+            docker compose --env-file /var/lib/orca/env up -d --pull missing --remove-orphans
     # Docker's data root on the data disk: images, build cache and the volumes of project stacks survive a rebuild,
     # and the boot disk is Flatcar only.
     - path: /etc/docker/daemon.json

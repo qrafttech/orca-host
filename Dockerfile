@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1
 # orca-host — `orca serve` headless, with the tools an Orca worktree needs: claude, gh, git, docker CLI + compose, op.
 # Built for amd64 and arm64. State is not in the image: /home/orca is a volume, see compose.yaml.
+# No /etc/orca-host/env.tpl here: a derived image COPYs its own, the host reads it at boot (README).
 
 ARG ORCA_VERSION=1.4.205
 ARG CLAUDE_CODE_VERSION=2.1.282

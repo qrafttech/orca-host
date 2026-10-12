@@ -1,5 +1,5 @@
 # orca-host stack: Tailscale + Orca, both on the host's network. Everything personal comes from one env file,
-# read twice: by compose for the values below (`:?` = required, `:-` = default), and by the orca-host container
+# resolved from .env.tpl (README, "Configure your host"), read twice: by compose for the values below (`:?` = required, `:-` = default), and by the orca-host container
 # as a whole, so a new variable needs no change here.
 #   ORCA_ENV_FILE=<file> docker compose --env-file <file> up -d
 # The variables below are the contract of a host.
@@ -9,8 +9,8 @@
 #   CLAUDE_CODE_OAUTH_TOKEN  from `claude setup-token`
 #   GH_TOKEN                 classic GitHub token, `repo` + `read:org` — the only GitHub credential on the host
 #   GIT_AUTHOR_NAME / GIT_AUTHOR_EMAIL   git identity, also used as committer
-#   OP_SERVICE_ACCOUNT_TOKEN the token the VM rendered this file with, handed on to the sessions (set by the VM's
-#                            unit). `op` is in the image, so a project whose .env lives in 1Password is set up from
+#   OP_SERVICE_ACCOUNT_TOKEN the token the VM rendered this file with, handed on to the sessions (appended by the
+#                            VM's render-env). `op` is in the image, so a project whose .env lives in 1Password is set up from
 #                            a session. Every session, and everything it runs, reads that one read-only vault.
 #   CLAUDE_PERMISSION_MODE   optional: default | acceptEdits | auto | plan, the permission mode of Claude panes
 #   CLAUDE_SETTINGS_REPO     optional: <owner>/<repo> holding your Claude settings; CLAUDE_SETTINGS_FILE the path
