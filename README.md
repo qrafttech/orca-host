@@ -42,7 +42,7 @@ Where the host reads it, two places, both optional:
 | The file | A change |
 |---|---|
 | `/etc/orca-host/env.tpl` in your own image: `COPY .env.tpl /etc/orca-host/env.tpl` in its `Dockerfile` | a push: your CI builds, the host redeploys within five minutes and renders the env file again |
-| `.env.tpl` on the laptop, at `ENV_TPL`: Terraform carries it to the VM | a rebuild, see Updates |
+| `.env.tpl` on the laptop, at `ENV_TPL`: Terraform carries it to the VM | `make restart`: it copies the file again |
 
 Both exist: the image's first, then the laptop's, so a variable set in both takes the laptop's value.
 
@@ -139,12 +139,13 @@ Every time `main` moves here, you get a pull request bumping that digest, your C
 | your own image, merged to its `main` | your CI builds it; the host redeploys within five minutes | nothing |
 | `.env.tpl` in your own image | your CI builds; the host redeploys within five minutes and renders its env file again | nothing |
 | a token in 1Password | nothing until the next restart | `make restart` |
+| the laptop's `.env.tpl` | nothing until the next restart | `make restart` |
 | your settings repository: permissions, `CLAUDE.md`, skills, `config/mcp.json` | pulled at every start of the container | `make restart` |
-| `compose.yaml`, `terraform/ignition.yaml.tftpl`, `orca_image`, the laptop's `.env.tpl` | nothing: Ignition runs at first boot only | `make rebuild` |
+| `compose.yaml`, `terraform/ignition.yaml.tftpl`, `orca_image` | nothing: Ignition runs at first boot only | `make rebuild` |
 | `zone`, to the other of `data_disk_zones`: the VM's zone is out of stock, or down | a new VM there, the same data disk | `make apply` |
 
 - **Redeploy**: the host sees a new image under the tag it follows and restarts its container on it.
-- **Restart** (`make restart`): the env file rendered again from `.env.tpl` and 1Password, the image pulled, the container restarted even when neither changed, so the entrypoint pulls the settings repository again.
+- **Restart** (`make restart`): the laptop's `.env.tpl` copied to the host, the env file rendered again from it and 1Password, the image pulled, the container restarted even when neither changed, so the entrypoint pulls the settings repository again.
 - **Rebuild** (`apply -replace`): a new VM, from Ignition.
 
 All three end live terminals, and all three keep the data disk: checkouts, Tailscale identity, pairing, Docker's images and the volumes of project stacks. To stay on one build, name its `sha-<sha>` tag in `orca_image`: the host then never redeploys by itself.

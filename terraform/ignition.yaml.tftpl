@@ -1,6 +1,7 @@
 # Butane config for Flatcar, rendered by Terraform, applied by Ignition on the VM's first boot.
 # Everything the host is: an SSH key, the data disk, three files under /opt/orca (/etc is noexec on Flatcar) and
-# the local .env.tpl if there is one, Docker's data root on the data disk, the units. Nothing else is ever written.
+# the local .env.tpl if there is one, Docker's data root on the data disk, the units. Nothing else is ever written,
+# but /opt/orca/env.tpl, which `make restart` copies again from the laptop.
 variant: flatcar
 version: 1.0.0
 
@@ -32,6 +33,7 @@ storage:
           ${indent(10, compose)}
 %{ if env_tpl != "" ~}
     # The local .env.tpl, from the laptop: references, not values, so Ignition and the state may carry it.
+    # `make restart` writes it again, so a line added since needs no rebuild.
     - path: /opt/orca/env.tpl
       mode: 0600
       contents:
