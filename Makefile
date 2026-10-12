@@ -14,7 +14,7 @@ PROJECT  = $(shell sed -n 's/^project *= *"\(.*\)".*/\1/p' $(TFVARS) 2>/dev/null
 ZONE     = $(or $(shell sed -n 's/^zone *= *"\(.*\)".*/\1/p' $(TFVARS) 2>/dev/null),europe-west9-b)
 REGION   = $(shell echo $(ZONE) | sed 's/-[a-z]$$//')
 BUCKET   = $(PROJECT)-tfstate
-SECRET   = orca-host-$(NAME)-op-token
+SECRET   = $(NAME)-op-token
 OP_VAULT  = $(shell sed -n 's/^op_vault *= *"\(.*\)".*/\1/p' $(TFVARS) 2>/dev/null)
 OP_TOKEN  = op://$(OP_VAULT)/orca-host-service-account/credential
 # The image's template, then the local one; the last line of a variable wins, as on the host (render-env).
