@@ -104,17 +104,16 @@ pair-mobile:        ## restart the server on its mobile link, show it as a QR fo
 	  read -r _ || { echo; echo "no terminal to wait on: scan it, then \`make restart\`"; exit 1; }
 	$(SSH) core@$(NAME) sudo systemctl restart orca-env orca
 
-# compose recreates the container only when its image or its env file changed: a push to ENV_TEMPLATE or the
-# settings repository changes neither, so the container is restarted as well, and its entrypoint runs again.
+# compose recreates the container only when its image or its env file changed: a push to the settings repository
+# changes neither, so the container is restarted as well, and its entrypoint runs again.
 restart:            ## re-render the env file from 1Password, re-run the stack and the entrypoint. Ends live terminals.
 	$(SSH) core@$(NAME) 'sudo systemctl restart orca-env orca && docker restart orca-host'
 
 logs:
 	$(SSH) core@$(NAME) docker logs -f --tail 100 orca-host
 
-# `docker exec` gets the container's environment, not what the entrypoint added from ENV_TEMPLATE: sourced again.
 shell:              ## a shell in the Orca container, as `orca`, the same paths an Orca terminal sees
-	$(SSH) -t core@$(NAME) docker exec -it -u orca orca-host bash -c "'set -a; [ ! -f ~/.config/orca-host/env.sh ] || . ~/.config/orca-host/env.sh; set +a; exec bash'"
+	$(SSH) -t core@$(NAME) docker exec -it -u orca orca-host bash
 
 ssh:                ## a shell on the VM itself, as `core`
 	$(SSH) core@$(NAME)
