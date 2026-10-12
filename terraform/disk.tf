@@ -6,6 +6,8 @@ resource "google_compute_disk" "data" {
 
   lifecycle {
     prevent_destroy = true
+    # A disk restored from a snapshot (another zone, a recovery) is imported as it is: where it came from is history.
+    ignore_changes = [snapshot]
   }
   depends_on = [google_project_service.api]
 }
