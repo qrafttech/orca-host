@@ -1,11 +1,19 @@
 #!/bin/bash
-# The whole of a Debian host, rendered by Terraform, run once as root on the first boot after an install (OVH's
-# postInstallScript; logs in /var/log/ovh-postinstall.log). Idempotent: run twice, it changes nothing.
-# What Ignition is to a Flatcar host: the user `core` and its SSH key, /var/lib/orca on the data disk (else the root
-# disk), Docker pinned from Docker's apt repository with its data root there, /opt/orca, the units, the firewall,
-# unattended upgrades. Everything else runs in containers. The files under /opt/orca come from host/, verbatim.
+# The whole of a Debian host, rendered by Terraform, run as root at boot: on GCP the instance's `startup-script`,
+# run at every boot (logs on the serial console); on OVH the `postInstallScript`, run once at the first boot after a
+# reinstall (logs in /var/log/ovh-postinstall.log). Idempotent: run twice, it changes nothing, and a run of the
+# script it already applied stops at the first lines.
+# Everything the VM is: the user `core` and its SSH key, /var/lib/orca on the data disk (else the root disk), Docker
+# pinned from Docker's apt repository with its data root there, /opt/orca, the units, the firewall, unattended
+# upgrades. Everything else runs in containers. The files under /opt/orca come from host/, verbatim.
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
+
+# This very script, applied already: nothing to do. Its hash is on the boot disk, so a new VM runs it in full.
+# Read from a file only: a script piped to bash has no $0 to hash, and simply runs.
+stamp=/etc/orca-host/first-boot.sha256
+self=$( [ ! -f "$0" ] || sha256sum < "$0" )
+[ -z "$self" ] || [ "$self" != "$(cat "$stamp" 2>/dev/null)" ] || exit 0
 
 # /var/lib/orca: the data disk when there is one, formatted the first time only, mounted by label; else a directory.
 data_device='${data_device}'
@@ -20,9 +28,11 @@ fi
 mkdir -p /var/lib/orca/home
 [ -L /home/orca ] || ln -s /var/lib/orca/home /home/orca
 
-# Docker's data root on /var/lib/orca, set before the daemon first starts.
+# Docker's data root on /var/lib/orca, set before the daemon first starts. The graph-driver store, not containerd's
+# (Docker 29's default for a new install): containerd keeps its images under /var/lib/containerd, on the boot disk,
+# gone with the VM; overlay2 keeps them under the data root, with the volumes.
 mkdir -p /etc/docker /etc/systemd/system/docker.service.d
-echo '{"data-root": "/var/lib/orca/docker"}' > /etc/docker/daemon.json
+echo '{"data-root": "/var/lib/orca/docker", "features": {"containerd-snapshotter": false}}' > /etc/docker/daemon.json
 printf '[Unit]\nRequiresMountsFor=/var/lib/orca\n' > /etc/systemd/system/docker.service.d/10-data-root.conf
 
 # Docker from Docker's repository, pinned: a bump is a commit.
@@ -96,4 +106,8 @@ systemctl enable nftables
 systemctl daemon-reload
 systemctl enable docker orca-env.service orca.service orca-update.timer
 systemctl restart docker
-systemctl start --no-block orca.service orca-update.timer
+# restart, not start: on a re-run, compose applies what changed in /opt/orca
+systemctl restart --no-block orca.service
+systemctl start --no-block orca-update.timer
+mkdir -p "$(dirname "$stamp")"
+[ -z "$self" ] || echo "$self" > "$stamp"
