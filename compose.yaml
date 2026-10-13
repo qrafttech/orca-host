@@ -22,6 +22,8 @@
 #   ORCA_IMAGE               the image to run, a full reference: the published base, or your own image built
 #                            FROM it to add your tools (set by the VM's unit)
 #   PAIRING_ADDRESS          only on a laptop, see compose.laptop.yaml
+#   OP_SERVICE_ACCOUNT_TOKEN_<NAME>  optional: the token of another 1Password account's service account, which
+#                            resolves .env.<name>.tpl (README, Several 1Password accounts); handed on to the sessions too
 #   anything else            reaches the orca-host container as is: the `${VAR}` of your config/mcp.json, what
 #                            your own tools read
 
