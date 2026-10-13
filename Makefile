@@ -2,11 +2,14 @@
 # Two per-person files, plain configuration, versioned wherever you keep your host (the repository of your own image
 # is the natural place) or kept here, gitignored: TFVARS, the host's name, project, zone, SSH key; ENV_TPL, the
 # variables the host starts with, `VAR=value` per line, a secret as a `{{ op://Vault/Item/field }}` reference.
-# A reference is not a secret: 1Password holds the values, and nothing else. Next to ENV_TPL, one template per extra
-# 1Password account, its name ENV_TPL's with the account in it (.env.<name>.tpl), resolved with the token
-# OP_SERVICE_ACCOUNT_TOKEN_<NAME> that ENV_TPL yields.
-# The host reads the image's /etc/orca-host/env*.tpl, then these (Terraform carries them, `make restart` copies them
-# again), and resolves them at every boot with a service account, through inject-env.sh. `make env` does the same
+# A reference is not a secret: 1Password holds the values, and nothing else.
+# A service account reads one vault of one 1Password account. For a secret in another account: a service account
+# created in that account, its token an item of the host's vault, read by a line OP_SERVICE_ACCOUNT_TOKEN_<NAME> of
+# ENV_TPL; the references to that account go in a second template next to ENV_TPL, .env.<name>.tpl, resolved with it.
+# A template comes from one of two places, both optional, read in this order, the last line of a variable winning:
+#   the image      /etc/orca-host/env.tpl and env.<name>.tpl, which a derived image COPYs: a push reaches the host
+#   this laptop    ENV_TPL and the .env.<name>.tpl next to it: Terraform carries them, `make restart` copies them
+# The host resolves them at every boot with its service account, through inject-env.sh. `make env` does the same
 # here, with your own account. What the host needs from this laptop is that account's token — `make secret`, once.
 TFVARS  ?= terraform/terraform.tfvars
 ENV_TPL ?= .env.tpl
@@ -19,11 +22,11 @@ BUCKET   = $(PROJECT)-tfstate
 SECRET   = $(NAME)-op-token
 OP_VAULT  = $(shell sed -n 's/^op_vault *= *"\(.*\)".*/\1/p' $(TFVARS) 2>/dev/null)
 OP_TOKEN  = op://$(OP_VAULT)/orca-host-service-account/credential
-# The local templates: ENV_TPL and the .env.<name>.tpl next to it, and the name each one takes on the host.
+# The templates on this laptop: ENV_TPL and the .env.<name>.tpl next to it, and the name each takes on the host.
 LOCAL_TPLS = $(wildcard $(ENV_TPL) $(basename $(ENV_TPL)).*.tpl)
 host_tpl   = $(if $(filter $(ENV_TPL),$(1)),env.tpl,env.$(patsubst $(basename $(ENV_TPL)).%.tpl,%,$(1)).tpl)
 TF      := terraform -chdir=terraform
-# TFVARS by path, wherever it is; the local templates when there are any, their content goes into Ignition
+# TFVARS by path, wherever it is; the laptop's templates when there are any, their content goes into Ignition
 TF_VARS  = -var-file=$(abspath $(TFVARS)) \
 	   $(if $(LOCAL_TPLS),-var 'env_tpls={$(foreach f,$(LOCAL_TPLS),"$(call host_tpl,$(f))"="$(abspath $(f))",)}')
 # Every rebuild is a new host key, and the tailnet already authenticates the peer: no host-key check for this host.
@@ -40,7 +43,8 @@ ORCA_IMAGE ?= orca-host:dev
 secret: SHELL := /bin/bash
 secret: .SHELLFLAGS := -o pipefail -c
 
-# The image's templates first, then the local ones, as on the host (render-env); an image that is not there is none.
+# The templates in ORCA_IMAGE's /etc/orca-host first, then the laptop's, as on the host (render-env); an image that
+# is not there has none.
 env:                ## the env file, resolved from the templates with your own account, into ./env. `rm env` to redo it.
 	img=$$(mktemp -d) && trap 'rm -rf "$$img"' EXIT && \
 	  if cid=$$(docker create $(ORCA_IMAGE) 2>/dev/null); then \
@@ -110,10 +114,11 @@ pair-mobile:        ## restart the server on its mobile link, show it as a QR fo
 	  read -r _ || { echo; echo "no terminal to wait on: scan it, then \`make restart\`"; exit 1; }
 	$(SSH) core@$(NAME) sudo systemctl restart orca-env orca
 
-# The local templates first, when there are any: Ignition wrote them at first boot only, so a line or a file added
-# since reaches the host here, with no rebuild, and one removed since is removed there. compose recreates the container only when its image or its env file changed: a push to the
-# settings repository changes neither, so the container is restarted as well, and its entrypoint runs again.
-restart:            ## copy the local templates, re-render the env file from 1Password, re-run the stack and the entrypoint. Ends live terminals.
+# The laptop's templates first, when there are any: Ignition wrote them at first boot only, so a line or a file added
+# since reaches the host here, with no rebuild, and one removed since is removed there. compose recreates the
+# container only when its image or its env file changed: a push to the settings repository changes neither, so the
+# container is restarted as well, and its entrypoint runs again.
+restart:            ## copy the laptop's templates, re-render the env file from 1Password, re-run the stack and the entrypoint. Ends live terminals.
 	$(if $(LOCAL_TPLS),$(SSH) core@$(NAME) 'sudo rm -f /opt/orca/env.tpl /opt/orca/env.*.tpl' && \
 	  $(foreach f,$(LOCAL_TPLS),$(SSH) core@$(NAME) "sudo sh -c 'umask 077; cat > /opt/orca/$(call host_tpl,$(f))'" < $(f) &&) true)
 	$(SSH) core@$(NAME) 'sudo systemctl restart orca-env orca && docker restart orca-host'
