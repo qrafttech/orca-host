@@ -7,7 +7,7 @@ A VM that runs `orca serve` headless, one host per person, all of that person's 
 - **English only**, everywhere: README, script comments, commit messages, pull requests, issues, and anything an agent writes into GitHub — issue bodies and comments, pull request descriptions, review comments on code. Source material that arrives in French (a pasted message, call notes) is translated on the way in.
 - **The host is generic.** Nothing in `Dockerfile`, `compose.yaml` or `terraform/` knows a project. What a project needs on a worktree (`orca.yaml`, worktree scripts, `.env` files, base images) lives in that project's repository and runs from its setup hook.
 - **Nothing is installed at run time.** The image is a base; a person's own tools are their own image, `FROM` it, built by their own CI and named in `orca_image`. No mechanism here downloads, unpacks or installs software after the build — not even a generic one that names no tool.
-- **What must survive a rebuild is under `/var/lib/orca`**, Docker's data root included. The boot disk is Flatcar and nothing else; it is replaced with the VM. A project's databases are worktree databases: its setup hook creates them, its archive script removes them, nothing migrates them.
+- **What must survive a rebuild is under `/var/lib/orca`**, Docker's data root included. The boot disk is Debian and what `host/first-boot.sh.tftpl` puts there; it is replaced with the VM. A project's databases are worktree databases: its setup hook creates them, its archive script removes them, nothing migrates them.
 - **No secrets, no per-person values in the tree.** Tokens (`TS_AUTHKEY`, `GH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`), git identity and `.env` contents come in as environment variables at run time, from a `.env.tpl` the person keeps in their own repository (or image), its secrets as `{{ op:// }}` references the host resolves at every boot. The tree holds the *shape* of that file — variable names, in `compose.yaml` — never a value.
 - **Everything is declarative and idempotent**: a file says at the top where it runs and what it needs; applying it twice changes nothing.
 - **Plain facts, no state, no history.** The README says what a host is and how one is brought up, not what was done on which day, on which machine, for which project. No dates, no IPs, no IDs, no project or client names, no reference to other repositories or issues. What happened lives in the git log and in the issue trackers of the projects that use the host.
@@ -19,7 +19,7 @@ A VM that runs `orca serve` headless, one host per person, all of that person's 
 
 | File | Covers |
 |---|---|
-| [architecture.md](.claude/knowledge/architecture.md) | where things run, image and derived images, entrypoint, CI, stack, VM and Ignition, network, disks, sizing and cost, restart vs rebuild, pairing, GitHub token, workspace trust |
+| [architecture.md](.claude/knowledge/architecture.md) | where things run, image and derived images, entrypoint, CI, stack, VM and its first-boot script, network, disks, sizing and cost, restart vs rebuild, pairing, GitHub token, workspace trust |
 | [claude-settings.md](.claude/knowledge/claude-settings.md) | `CLAUDE_PERMISSION_MODE`, the settings repository, `config/mcp.json` |
 
 ## Setup steps: script or by hand
@@ -37,7 +37,7 @@ A VM that runs `orca serve` headless, one host per person, all of that person's 
 | OVH VPS: the order | OVH control panel | — |
 | OVH API credentials (`endpoint`, `application_key`, `application_secret`, `consumer_key`) | createtoken page, into a 1Password item `ovh-api` | — |
 | OVH: SSH off the public address | `make lockdown`, after `make pair` | in the install, once the token is there |
-| the service-account token into Secret Manager | `make secret` | — |
+| the service-account token onto the host, `/var/lib/orca/op-token` | `make secret` | — |
 | renewing that token when it expires | 1Password, then `make secret` and `make restart` | a reminder before the expiry |
 | pairing | `make pair` | from the Orca client |
 | mobile pairing | `make pair`, QR on the laptop | from the desktop client |

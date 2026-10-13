@@ -52,8 +52,8 @@ Needed on the laptop: `docker`, `terraform`, `gcloud`, `op` (1Password CLI), `jq
 
    ```bash
    make init      # once per checkout
-   make apply     # VPC, service account, secret, data disk, VM
-   make secret    # the service-account token into Secret Manager
+   make apply     # VPC, data disk, a Debian VM made into the host at its first boot
+   make secret    # the service-account token, over SSH (IAP until the host is on the tailnet)
    make pair      # the desktop client, then the phone (Tailscale on, same tailnet)
    ```
 
@@ -123,7 +123,7 @@ updates:
 | this repository, merged to `main` | nothing if the host runs the base image; else merge Dependabot's pull request in yours |
 | your own image, merged to its `main`, `.env.tpl` in it included | nothing: the host redeploys within five minutes |
 | a token in 1Password, the laptop's `.env.tpl`, your settings repository | `make restart` |
-| `orca_image`, `compose.yaml`, `terraform/ignition.yaml.tftpl` | `make rebuild` |
+| `orca_image`, `compose.yaml`, `host/` | `make rebuild` |
 | `zone`, to the other of `data_disk_zones` (the VM's zone is out of stock, or down) | `make apply` |
 | nothing, but the service-account token expired | a new token in its item, `make secret`, `make restart` |
 

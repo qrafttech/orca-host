@@ -1,9 +1,9 @@
 # Architecture
 
-Image, stack, host. Each layer works without the one above it: the image runs on any Docker host, the stack on any Linux Docker host with `/dev/net/tun`, the Terraform module brings up a GCP VM that runs the stack. Another provider is another Terraform root: `terraform/ovh/` installs Debian on an OVH VPS with `host/first-boot.sh.tftpl` (below, **An OVH host**).
+Image, stack, host. Each layer works without the one above it: the image runs on any Docker host, the stack on any Linux Docker host with `/dev/net/tun`, Terraform brings up a VM that runs the stack: Debian, made into a host by one script, `host/first-boot.sh.tftpl`, the same on every provider. One Terraform root per provider: `terraform/` on GCP, `terraform/ovh/` on an OVH VPS (below, **An OVH host**).
 
 ```
-laptop / phone ──tailnet──▶ VM (Flatcar Container Linux, Ignition)
+laptop / phone ──tailnet──▶ VM (Debian, host/first-boot.sh.tftpl)
                              ├─ data disk  /var/lib/orca — survives a VM rebuild, snapshotted daily
                              │    home/       /home/orca: checkouts, ~/.claude, Orca state
                              │    tailscale/  node identity: same tailnet IP after a rebuild
@@ -59,7 +59,7 @@ Why not a boot-time installer — the entrypoint reading a list of declared URLs
 - **Auditable.** `docker history` and a tag say what is installed. A volume only says it by being read.
 - **Pinned in time.** The digest in the `FROM` and the checksums in the `RUN` are fixed when the build runs, not re-resolved against a release page months later.
 - **No package format to maintain.** Each release shape (a bare binary, a `.tar.gz`, a `.zip`, a nested path) would be a special case in shell. `RUN` is the whole vocabulary, and it is Docker's, not ours.
-- **It is what the VM is for.** Flatcar is immutable so that nothing is installed on the host; installing into a volume at every start put the moving parts back.
+- **It is what the VM is for.** The host installs Docker and nothing else, once, from a pinned script; installing into a volume at every start put the moving parts back.
 
 The cost is a rebuild for a new tool instead of a restart, and a derived image going stale when the base moves. A digest-pinned `FROM` plus Dependabot in the derived repository turns the second into a pull request per base build. Private derived images are not supported: `/opt/orca/up` does no registry login, so a derived image must be public — it holds no secret, only software that was already downloadable.
 
@@ -84,21 +84,23 @@ Stopping the stack ends live terminals, as a service restart does.
 
 One person, one `terraform apply`, one state, in a bucket of the person's own GCP project: `make bootstrap` creates it, `make init` points Terraform at it, one prefix per host. Terraform authenticates with Application Default Credentials, separate from `gcloud auth login`.
 
-The VM is Flatcar Container Linux: immutable, Docker built in, nothing installed, updates itself. Ignition, rendered from `terraform/ignition.yaml.tftpl`, is everything the VM is, applied at first boot only:
+The VM is Debian 13. `host/first-boot.sh.tftpl`, rendered by Terraform from `compose.yaml` and the files under `host/`, is everything the VM is: GCP runs it as the instance's `startup-script`, at every boot, and it stops at its first lines when the hash of the script it last applied, kept on the boot disk, is its own; OVH runs it once after a reinstall. Idempotent either way:
 
-- the SSH key for `core`
-- the data disk: ext4, labelled `orca`, mounted at `/var/lib/orca`, never wiped (`wipe_filesystem: false`)
+- the user `core`, its SSH key, sudo and docker; no password login
+- the data disk (`data_device`): ext4, labelled `orca`, formatted only when it holds no filesystem, mounted at `/var/lib/orca` by label; without one, `/var/lib/orca` is a directory of the root disk
 - `/home/orca → /var/lib/orca/home`
-- `/opt/orca/compose.yaml`, `/opt/orca/render-env`, `/opt/orca/up` (`/etc` is noexec on Flatcar), and `/opt/orca/env.tpl` when the laptop has a `.env.tpl`
-- `/etc/docker/daemon.json`: Docker's data root at `/var/lib/orca/docker`, and a drop-in so `docker.service` starts after the data disk is mounted
-- `orca-env.service`: renders the env file, below. Retries until the secret has a version (`make secret` may come after `make apply`). It runs `op`, so it waits for Docker as `orca.service` does
-- `orca.service`: `/opt/orca/up` pulls `orca_image`, renders the env file again if the image is not the one it was rendered from (a new image may carry a new `/etc/orca-host/env.tpl`), then `docker compose up -d --pull missing --remove-orphans`, run from the `docker:cli` image, since Flatcar ships no compose: compose runs the image the env file was rendered from, not one pulled a second later. Then `docker image prune -f`, once the stack is up: a pull on a moving tag leaves the image it replaced untagged, and a full orca-host image is not small next to every project's images on the same disk. Dangling only, so nothing tagged and nothing a container uses is touched, and a failed prune does not fail the unit.
+- Docker CE, its compose and buildx plugins and containerd from Docker's apt repository, versions pinned and held; Debian's own packages update unattended
+- `/etc/docker/daemon.json`: Docker's data root at `/var/lib/orca/docker`, the graph-driver store rather than containerd's (whose images would sit under `/var/lib/containerd`, on the boot disk), and a drop-in so `docker.service` starts after the data disk is mounted
+- `/opt/orca/compose.yaml`, `render-env`, `up`, `firewall`, `host.env` (the host's name and image, read by the units), and `/opt/orca/env.tpl` when the laptop has a `.env.tpl`
+- `/opt/orca/firewall`: nftables, its own table beside Docker's. In: the tailnet, Docker's bridges, ICMP, DHCP, Tailscale's UDP 41641, and SSH until `make lockdown` (a marker, `/var/lib/orca/lockdown`). Forward: no new connection from the public interface reaches a container, so a project's `ports:` stays on the tailnet
+- `orca-env.service`: renders the env file, below. Retries until `/var/lib/orca/op-token` is there (`make secret` comes after `make apply`). It runs `op`, so it waits for Docker as `orca.service` does
+- `orca.service`: `/opt/orca/up` pulls `orca_image`, renders the env file again if the image is not the one it was rendered from (a new image may carry a new `/etc/orca-host/env.tpl`), then `docker compose up -d --pull missing --remove-orphans`: compose runs the image the env file was rendered from, not one pulled a second later. Then `docker image prune -f`, once the stack is up: a pull on a moving tag leaves the image it replaced untagged, and a full orca-host image is not small next to every project's images on the same disk. Dangling only, so nothing tagged and nothing a container uses is touched, and a failed prune does not fail the unit.
 
-**Secrets.** Two hops, one vault. Secret Manager holds a single line, a 1Password service-account token; Terraform creates that secret empty and `make secret` adds the versions, so no secret ever passes through Terraform or its state. At every start of `orca-env.service` the VM reads it with its own GCP identity — the only permission that identity has — and renders the env file from `.env.tpl`: the image's `/etc/orca-host/env.tpl`, then `/opt/orca/env.tpl`, both optional, the last line of a variable winning, every `{{ op://Vault/Item/field }}` resolved by `op inject`. `/var/lib/orca/env.image` records the image it was rendered from. `op` runs from its own image, as compose runs from `docker:cli`: Flatcar installs nothing.
+**Secrets.** Two hops, one vault. `/var/lib/orca/op-token` holds a single line, a 1Password service-account token, written by `make secret` over SSH, so no secret ever passes through Terraform or its state. The first time, the host is not on the tailnet yet — it joins with a key it reads with that very token — so `make secret` falls back to the way in before the tailnet: IAP on GCP, the public address on OVH. At every start of `orca-env.service` the VM renders the env file from `.env.tpl`: the image's `/etc/orca-host/env.tpl`, then `/opt/orca/env.tpl`, both optional, the last line of a variable winning, every `{{ op://Vault/Item/field }}` resolved by `op inject`. `/var/lib/orca/env.image` records the image it was rendered from. `op` runs from its own image, pinned in `render-env`.
 
-**Configuration.** What a host is — its name, project and zone in `terraform.tfvars`, the variables it starts with in `.env.tpl` — is configuration, and most of it is not secret. It is a file, versioned in the person's own repository, as a project versions its `.env.tpl`: the secrets in it are references, and a reference is not a secret. 1Password holds the values and nothing else. Two places for `.env.tpl`, because two kinds of person: one with an image of their own `COPY`s it to `/etc/orca-host/env.tpl`, and reaches the host with a push, since the VM reads the file from the image it is about to run and knows that image already (`orca_image`); one on the base image keeps it on the laptop, and Terraform carries it, as it carries `compose.yaml` — a reference may sit in Ignition and in the state. Ignition writes it at first boot only, so `make restart` copies it again before rendering: a new line is a restart, not a rebuild. The laptop's file comes last so a host can override what its image says.
+**Configuration.** What a host is — its name, project and zone in `terraform.tfvars`, the variables it starts with in `.env.tpl` — is configuration, and most of it is not secret. It is a file, versioned in the person's own repository, as a project versions its `.env.tpl`: the secrets in it are references, and a reference is not a secret. 1Password holds the values and nothing else. Two places for `.env.tpl`, because two kinds of person: one with an image of their own `COPY`s it to `/etc/orca-host/env.tpl`, and reaches the host with a push, since the VM reads the file from the image it is about to run and knows that image already (`orca_image`); one on the base image keeps it on the laptop, and Terraform carries it, as it carries `compose.yaml` — a reference may sit in the first-boot script and in the state. The script writes it at install, so `make restart` copies it again before rendering: a new line is a restart, not a rebuild. The laptop's file comes last so a host can override what its image says.
 
-The chain is the VM's GCP identity → one secret → one token → one vault, read-only. `op_vault` is a technical vault: the tokens agents read, no password data. A service account is scoped per vault, not per item, so every reference in `.env.tpl` has to resolve inside that vault.
+The chain is one file on the data disk → one token → one vault, read-only. `op_vault` is a technical vault: the tokens agents read, no password data. A service account is scoped per vault, not per item, so every reference in `.env.tpl` has to resolve inside that vault.
 
 What this buys is rotation. A token changed in 1Password reaches the host with `make restart`; a new variable is a line in `.env.tpl`: in the person's own image, a push, and the redeploy renders it; on the laptop, `make restart`, which copies it to the VM. Nothing is frozen at the moment it was uploaded — `make env` resolves the same files, with the person's own account, for a stack run there. The service-account token itself expires: renewing it is the one secret placed by hand, a new token in the item then `make secret`. Until that is done the host does not come up — `orca-env.service` fails rather than start the stack on the env file it rendered last time, and says so on the serial console. Restarting the two units is the way back.
 
@@ -112,10 +114,10 @@ Claude Code's own permission classifier refuses `op` in `auto` mode, as credenti
 
 | Disk | Size | Holds | On a rebuild |
 |---|---|---|---|
-| boot | `boot_disk_gb`, 20 GB by default | Flatcar, nothing else | replaced with the VM |
+| boot | `boot_disk_gb`, 20 GB by default | Debian, Docker, `/opt/orca` | replaced with the VM |
 | data | `data_disk_gb`, 50 GB by default | `/var/lib/orca`: `home/` (checkouts, worktrees, `~/.claude`, Orca state), `tailscale/` (node identity), `docker/` (Docker's data root: the images, the containers, the build cache, the named volumes of project stacks), `env` | kept |
 
-Everything under `/var/lib/orca` survives a rebuild, Docker's root included: nothing is pulled again, a worktree's `postgres_data` is still there. Docker's root is there by `daemon.json`, not by Docker's default (`/var/lib/docker`, on the boot disk): once Flatcar has its share, the boot disk is too small for one project's images, and what it held went with the VM. A database in a Docker volume is a worktree database all the same: its setup hook creates it, its archive script removes it (`docker compose down -v`), nothing migrates it. The data disk is `pd-balanced` and regional, replicated in the two `data_disk_zones`: the VM runs in either, so a zone out of stock or down is a new `zone` and a `make apply`, the disk untouched. It is `prevent_destroy`, daily snapshots at 03:00 (Docker's root included), seven kept, kept if the disk is deleted; it grows live, never shrinks. Docker is what fills it: `docker system df` says what takes it, `docker system prune` from `make shell` gives back what no container uses (volumes only with `--volumes`).
+Everything under `/var/lib/orca` survives a rebuild, Docker's root included: nothing is pulled again, a worktree's `postgres_data` is still there. Docker's root is there by `daemon.json`, not by Docker's default (`/var/lib/docker`, on the boot disk): once Debian has its share, the boot disk is too small for one project's images, and what it held went with the VM. A database in a Docker volume is a worktree database all the same: its setup hook creates it, its archive script removes it (`docker compose down -v`), nothing migrates it. The data disk is `pd-balanced` and regional, replicated in the two `data_disk_zones`: the VM runs in either, so a zone out of stock or down is a new `zone` and a `make apply`, the disk untouched. It is `prevent_destroy`, daily snapshots at 03:00 (Docker's root included), seven kept, kept if the disk is deleted; it grows live, never shrinks. Docker is what fills it: `docker system df` says what takes it, `docker system prune` from `make shell` gives back what no container uses (volumes only with `--volumes`).
 
 **Sizing.** `machine_type` defaults to `e2-standard-4`, 16 GB of RAM: about 4 GB per compose stack, so three stacks and Orca. E2, N2 or N2D only: a regional disk attaches to no other series.
 
@@ -128,7 +130,7 @@ Everything under `/var/lib/orca` survives a rebuild, Docker's root included: not
 | data disk, 50 GB `pd-balanced`, regional | $0.26 / GB-month | ~13 |
 | boot disk, 20 GB `pd-balanced`, zonal | $0.116 / GB-month | ~2.3 |
 | public IP, in use | $0.005 / h | ~3.7 |
-| snapshots, state bucket, the secret | | a few dollars at most |
+| snapshots, state bucket | | a few dollars at most |
 
 About $160 a month, $5 a day. N2D's sustained-use discount takes up to 20% off the VM over a full month; E2 has none. The regional disk is 2.2× the zonal price: that is what a zone out of stock being an apply costs. The VM line is the one to move: `e2-standard-4` is about $113, Spot about a third of the on-demand price but preemptible, a one-year commitment about 40% off. Stopped, a host costs its disks.
 
@@ -146,9 +148,9 @@ while :; do
 done
 ```
 
-What a project holds: `gcloud compute instances|disks|snapshots|addresses list`, `gcloud storage ls`, `gcloud secrets list`, each with `--project`. What it was actually billed: the console, Billing → Reports, filtered on the project, grouped by SKU, credits unticked — a trial account otherwise shows $0.
+What a project holds: `gcloud compute instances|disks|snapshots|addresses list`, `gcloud storage ls`, each with `--project`. What it was actually billed: the console, Billing → Reports, filtered on the project, grouped by SKU, credits unticked — a trial account otherwise shows $0.
 
-**Network.** Own VPC, nothing reaches the VM from the internet; the public IP is for egress only. SSH answers on the tailnet address: `ssh core@<name>`. One firewall rule, the break-glass for when the stack is down: SSH from Google's IAP range only, `gcloud compute ssh <name> --tunnel-through-iap`, which needs an IAM identity of the project. The serial console (`gcloud compute connect-to-serial-port`) shows the boot log, including both units' output.
+**Network.** Own VPC, nothing reaches the VM from the internet; the public IP is for egress only. SSH answers on the tailnet address: `ssh core@<name>`. One firewall rule, the break-glass for when the stack is down and the way in for the first `make secret`: SSH from Google's IAP range only, `gcloud compute ssh <name> --tunnel-through-iap`, as the person's OS Login user (`enable-oslogin`), which needs an IAM identity of the project. The host's own firewall leaves SSH open on the public interface: the VPC already lets in IAP only, so `make lockdown` has nothing to do on GCP. The serial console (`gcloud compute connect-to-serial-port`) shows the boot log, the startup script's included, and both units' output.
 
 **Host keys.** Every rebuild is a new host key, and the tailnet already authenticates the peer, so the `Makefile` skips the host-key check for this host. For your own `ssh core@<name>`, the same in `~/.ssh/config`:
 
@@ -160,15 +162,13 @@ Host <name>
 
 ## An OVH host
 
-`PROVIDER=ovh`, `terraform/ovh/`. Same stack, same `/var/lib/orca`, same units; the VM underneath is Debian, not Flatcar, because an OVH VPS takes no custom image and no user-data. What it takes is a bash script run once at the first boot after a reinstall (`postInstallScript` on `POST /vps/{service}/rebuild`): `host/first-boot.sh.tftpl`, rendered by Terraform from `compose.yaml` and the files under `host/`, which does what Ignition does on GCP. It runs as root and logs to `/var/log/ovh-postinstall.log`.
+`PROVIDER=ovh`, `terraform/ovh/`. The same VM as on GCP: an OVH VPS takes no custom image and no user-data, but a bash script run once at the first boot after a reinstall (`postInstallScript` on `POST /vps/{service}/rebuild`), and that is the first-boot script. It logs to `/var/log/ovh-postinstall.log`.
 
 - **The VPS** is ordered by hand and imported (`ovh_vps`, `prevent_destroy`): Terraform never orders nor terminates one.
 - **The install** is `terraform_data.install`. The `ovh` provider does not pass a post-install script, so its `local-exec` calls `ovhcloud vps reinstall --from-file` with the image id (looked up by `image_name`), the SSH key and the script. It is replaced, i.e. the VPS reinstalled, when the image or the key changes, or on `make rebuild`; a change of the script alone is stored, not applied.
 - **Tools**: Terraform and `ovhcloud` run from `tools/Dockerfile`, pinned. OVH's API credentials are an item `ovh-api` (`endpoint`, `application_key`, `application_secret`, `consumer_key`) that `op run` puts in the container's environment; the state is in the GCS bucket `state_bucket`, through application-default credentials.
-- **The token**: no Secret Manager, no instance identity. `make secret` writes `/var/lib/orca/op-token` over SSH; `render-env` waits for it. The first time, the host is not on the tailnet yet (its key is read with that token), so `make secret` falls back to the public address.
-- **Firewall**: GCP's VPC is replaced by nftables, `/opt/orca/firewall`, its own table beside Docker's. In: the tailnet, Docker's bridges, ICMP, DHCP, Tailscale's UDP 41641, and SSH until `make lockdown` (a marker, `/var/lib/orca/lockdown`). Forward: no new connection from the public interface reaches a container, so a project's `ports:` stays on the tailnet.
+- **SSH**: on the public address until `make lockdown`, for the first `make secret`; then the tailnet only, KVM in OVH's console as the break-glass.
 - **Disk**: `data_device`, the VPS's additional disk if ordered, survives a reinstall. Without one, `/var/lib/orca` is on the root disk and a reinstall wipes it, pairing included.
-- **Docker** comes from Docker's apt repository, versions pinned in the script and held; Debian's own packages update unattended.
 
 ## Restart or rebuild
 
@@ -176,11 +176,11 @@ Three ways a change reaches the host; the README, "When you change something", s
 
 - **Redeploy**: the host sees a new image under the tag it follows and restarts its container on it. The env file is rendered again first, since a new image may carry a new `/etc/orca-host/env.tpl`.
 - **Restart** (`make restart`): the laptop's `.env.tpl` copied to the host, the env file rendered again from it and 1Password, the image pulled, the container restarted even when neither changed, so the entrypoint pulls the settings repository again.
-- **Rebuild** (`make rebuild`, an `apply -replace` of the VM): a new VM, from Ignition.
+- **Rebuild** (`make rebuild`, an `apply -replace` of the VM on GCP, of the install on OVH): a new Debian, from the first-boot script.
 
 `orca-update.timer` restarts `orca.service` every five minutes. `/opt/orca/up` pulls the image, and compose recreates a container only when that image differs from the running one, so a tick with nothing new is a manifest request and no more, and a merge to `main` reaches the host without anyone doing anything. The cost is that a redeploy ends live terminals, and no one chose its moment: a host following a tag takes what the tag serves. A host pinned to `sha-<sha>` in `orca_image` never moves, and the timer then only ever costs the manifest request.
 
-Ignition runs at first boot only, and `compose.yaml` is baked into it. A rebuild keeps the data disk: checkouts, Tailscale identity, pairing, Docker's images and the volumes of project stacks. Only Flatcar is new.
+`compose.yaml` is baked into the first-boot script. On GCP a change of it is stored in the instance's metadata and runs at the next boot; a rebuild is the clean way. A rebuild keeps the data disk: checkouts, Tailscale identity, pairing, Docker's images and the volumes of project stacks. Only Debian is new.
 
 ## Pairing
 

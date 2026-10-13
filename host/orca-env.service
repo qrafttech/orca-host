@@ -1,4 +1,4 @@
-# The units of a Debian host, under /etc/systemd/system: the same three as Flatcar's, reading /opt/orca/host.env.
+# The units of a host, under /etc/systemd/system: orca-env, orca, orca-update and its timer, reading /opt/orca/host.env.
 [Unit]
 Description=orca-host: render the env file from 1Password
 # `op` runs from an image, so this unit needs Docker as much as orca.service does.
