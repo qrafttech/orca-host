@@ -1,21 +1,26 @@
-# The VM: Flatcar Container Linux, configured by Ignition on first boot, throwaway.
+# The VM: Debian, configured by host/first-boot.sh.tftpl, its `startup-script`, throwaway.
 # Rebuild: `make rebuild` (apply -replace=google_compute_instance.vm) — the data disk (home, Tailscale identity, Docker's
-# images and volumes) and the pairing survive; only Flatcar is new.
-data "google_compute_image" "flatcar" {
-  family  = "flatcar-stable"
-  project = "kinvolk-public"
+# images and volumes) and the pairing survive; only Debian is new.
+data "google_compute_image" "debian" {
+  family  = "debian-13"
+  project = "debian-cloud"
 }
 
-data "ct_config" "ignition" {
-  strict = true
-  content = templatefile("${path.module}/ignition.yaml.tftpl", {
+locals {
+  first_boot = templatefile("${path.module}/../host/first-boot.sh.tftpl", {
     name        = var.name
-    project     = var.project
     orca_image  = var.orca_image
     ssh_key     = var.ssh_public_key
-    compose     = file("${path.module}/../compose.yaml")
-    env_tpl     = var.env_tpl == "" ? "" : file(var.env_tpl)
     data_device = "/dev/disk/by-id/scsi-0Google_PersistentDisk_${google_compute_region_disk.data.name}"
+    compose     = trimsuffix(file("${path.module}/../compose.yaml"), "\n")
+    env_tpl     = var.env_tpl == "" ? "" : trimsuffix(file(var.env_tpl), "\n")
+    scripts = {
+      for f in ["render-env", "up", "firewall"] : f => trimsuffix(file("${path.module}/../host/${f}"), "\n")
+    }
+    units = {
+      for f in ["orca-env.service", "orca.service", "orca-update.service", "orca-update.timer"] :
+      f => trimsuffix(file("${path.module}/../host/${f}"), "\n")
+    }
   })
 }
 
@@ -26,7 +31,7 @@ resource "google_compute_instance" "vm" {
 
   boot_disk {
     initialize_params {
-      image = data.google_compute_image.flatcar.self_link
+      image = data.google_compute_image.debian.self_link
       size  = var.boot_disk_gb
       type  = "pd-balanced"
     }
@@ -42,13 +47,11 @@ resource "google_compute_instance" "vm" {
     access_config {} # an ephemeral public IP, for egress only: no firewall rule lets anything in
   }
 
-  service_account {
-    email  = google_service_account.vm.email
-    scopes = ["cloud-platform"]
-  }
-
+  # Run at every boot by the guest agent; the script stops at once when it applied itself already. A change of it
+  # is stored in place and runs at the next boot: `make rebuild` for a clean one.
   metadata = {
-    user-data          = data.ct_config.ignition.rendered
+    startup-script     = local.first_boot
+    enable-oslogin     = "TRUE" # IAP SSH with the project's IAM identities, no key pushed into metadata
     serial-port-enable = "TRUE" # break-glass: `gcloud compute connect-to-serial-port`, read-only without a password
   }
 

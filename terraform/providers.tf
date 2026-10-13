@@ -5,14 +5,20 @@ terraform {
       source  = "hashicorp/google"
       version = "~> 8.3"
     }
-    ct = {
-      source  = "poseidon/ct"
-      version = "~> 0.14"
-    }
   }
 }
 
 provider "google" {
   project = var.project
   zone    = var.zone
+}
+
+locals {
+  region = join("-", slice(split("-", var.zone), 0, 2))
+}
+
+resource "google_project_service" "api" {
+  for_each           = toset(["compute.googleapis.com"])
+  service            = each.key
+  disable_on_destroy = false
 }

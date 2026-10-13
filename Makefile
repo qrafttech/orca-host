@@ -18,7 +18,6 @@ PROJECT  = $(shell sed -n 's/^project *= *"\(.*\)".*/\1/p' $(TFVARS) 2>/dev/null
 ZONE     = $(or $(shell sed -n 's/^zone *= *"\(.*\)".*/\1/p' $(TFVARS) 2>/dev/null),europe-west9-b)
 REGION   = $(shell echo $(ZONE) | sed 's/-[a-z]$$//')
 BUCKET   = $(or $(shell sed -n 's/^state_bucket *= *"\(.*\)".*/\1/p' $(TFVARS) 2>/dev/null),$(PROJECT)-tfstate)
-SECRET   = $(NAME)-op-token
 OP_VAULT  = $(shell sed -n 's/^op_vault *= *"\(.*\)".*/\1/p' $(TFVARS) 2>/dev/null)
 OP_TOKEN  = op://$(OP_VAULT)/orca-host-service-account/credential
 # The image's template, then the local one; the last line of a variable wins, as on the host (render-env).
@@ -41,7 +40,7 @@ TF_OVH    = OVH_ENDPOINT="$(OVH_ITEM)/endpoint" OVH_APPLICATION_KEY="$(OVH_ITEM)
 	      $(if $(wildcard $(ENV_TPL)),-v $(abspath $(ENV_TPL)):$(abspath $(ENV_TPL)):ro) \
 	      -w $(CURDIR) $(TOOLS) -chdir=terraform/ovh
 REPLACE   = $(if $(filter ovh,$(PROVIDER)),terraform_data.install,google_compute_instance.vm)
-# TFVARS by path, wherever it is; ENV_TPL only when it exists, its content goes into Ignition or the install script
+# TFVARS by path, wherever it is; ENV_TPL only when it exists, its content goes into the first-boot script
 TF_VARS  = -var-file=$(abspath $(TFVARS)) $(if $(wildcard $(ENV_TPL)),-var env_tpl=$(abspath $(ENV_TPL)))
 # Every rebuild is a new host key, and the tailnet already authenticates the peer: no host-key check for this host.
 SSH     := ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR
@@ -53,7 +52,7 @@ ORCA_IMAGE ?= orca-host:dev
 .DELETE_ON_ERROR:
 
 # Both recipes pipe, and `sh` has no pipefail: a failed `op` would exit 0 through the next command and write an
-# empty file, or upload an empty secret version. bash for these two, so the pipeline fails with its first command.
+# empty file, or hand the host an empty token. bash for these two, so the pipeline fails with its first command.
 env secret: SHELL := /bin/bash
 env secret: .SHELLFLAGS := -o pipefail -c
 
@@ -84,20 +83,16 @@ PAIRING_URL = $(SSH) core@$(NAME) docker logs orca-host 2>/dev/null \
 	  | jq -Rr 'fromjson? | select(.type=="orca_server_ready") | .pairing.url' | tail -1
 
 # One line, and the only thing this laptop hands the host. A service-account token expires: the day it does,
-# a new one goes in the item and this runs again — nothing else moves. On GCP, a version of the host's secret;
-# on OVH, /var/lib/orca/op-token over SSH: the tailnet when the host is on it, else its public address, since
-# the host joins the tailnet with a key it reads with this very token.
+# a new one goes in the item and this runs again — nothing else moves. It goes to /var/lib/orca/op-token over SSH:
+# the tailnet when the host is on it, else the way in before it, since the host joins the tailnet with a key it
+# reads with this very token — IAP on GCP, the public address on OVH (looked up with stdin closed: it is the token).
+WRITE_TOKEN   = sudo sh -c 'umask 077; cat > /var/lib/orca/op-token.tmp && mv /var/lib/orca/op-token.tmp /var/lib/orca/op-token'
+BOOTSTRAP_SSH = $(if $(filter ovh,$(PROVIDER)),$(SSH) -o ConnectTimeout=10 core@$$($(TF) output -raw ipv4 </dev/null),\
+	          gcloud compute ssh $(NAME) --zone $(ZONE) --project $(PROJECT) --tunnel-through-iap --command)
 secret:             ## the service-account token, from 1Password, to the host
-ifeq ($(PROVIDER),ovh)
 	token=$$(op read "$(OP_TOKEN)" | tr -d '\r\n'); [ -n "$$token" ] || exit 1; \
-	for h in $(NAME) $$($(TF) output -raw ipv4); do \
-	  printf '%s' "$$token" | $(SSH) -o ConnectTimeout=10 core@$$h \
-	    "sudo sh -c 'umask 077; cat > /var/lib/orca/op-token.tmp && mv /var/lib/orca/op-token.tmp /var/lib/orca/op-token'" \
-	    && exit 0; \
-	done; exit 1
-else
-	op read "$(OP_TOKEN)" | tr -d '\r\n' | gcloud secrets versions add $(SECRET) --data-file=- --project $(PROJECT)
-endif
+	printf '%s' "$$token" | $(SSH) -o ConnectTimeout=10 core@$(NAME) "$(WRITE_TOKEN)" \
+	  || printf '%s' "$$token" | $(BOOTSTRAP_SSH) "$(WRITE_TOKEN)"
 
 bootstrap:          ## once per project: the state bucket
 	gcloud storage buckets describe gs://$(BUCKET) --project $(PROJECT) >/dev/null 2>&1 || \
@@ -118,9 +113,14 @@ rebuild:            ## a new VM (GCP) or a reinstall (OVH), the data disk kept: 
 	$(TF) apply $(TF_VARS) -replace=$(REPLACE)
 
 # An OVH host answers SSH on its public address until this, for the first `make secret`. Over the tailnet, so the
-# session doing it is not the one cut. A GCP host has no public SSH to close.
+# session doing it is not the one cut. A GCP host has no public SSH to close: its VPC lets in IAP only, which stays
+# the way in when the tailnet is down.
 lockdown:           ## OVH: SSH on the tailnet only, from now on and across reinstalls of a kept data disk
+ifeq ($(PROVIDER),ovh)
 	$(SSH) core@$(NAME) 'sudo touch /var/lib/orca/lockdown && sudo /opt/orca/firewall'
+else
+	@echo "a GCP host has no public SSH: nothing to close"
+endif
 
 pair: pair-desktop pair-mobile  ## the desktop client, then the phone, then the server back to its desktop link
 
@@ -143,7 +143,7 @@ pair-mobile:        ## restart the server on its mobile link, show it as a QR fo
 	  read -r _ || { echo; echo "no terminal to wait on: scan it, then \`make restart\`"; exit 1; }
 	$(SSH) core@$(NAME) sudo systemctl restart orca-env orca
 
-# ENV_TPL first, when there is one: Ignition wrote it at first boot only, so a line added since reaches the host
+# ENV_TPL first, when there is one: the first-boot script wrote it at install, so a line added since reaches the host
 # here, with no rebuild. compose recreates the container only when its image or its env file changed: a push to the
 # settings repository changes neither, so the container is restarted as well, and its entrypoint runs again.
 restart:            ## copy ENV_TPL, re-render the env file from 1Password, re-run the stack and the entrypoint. Ends live terminals.

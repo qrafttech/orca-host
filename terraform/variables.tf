@@ -1,5 +1,5 @@
 variable "name" {
-  description = "Host name: the VM, its disk, its secret, its name on the tailnet."
+  description = "Host name: the VM, its disk, its name on the tailnet."
   type        = string
 }
 
@@ -14,7 +14,7 @@ variable "op_vault" {
 }
 
 variable "env_tpl" {
-  description = "Path to the local .env.tpl, empty for none. Its content goes into Ignition, read by the host after the image's /etc/orca-host/env.tpl, so a variable set in both takes the local value. References, not values: Ignition and the state may carry it. The Makefile sets it when the file exists."
+  description = "Path to the local .env.tpl, empty for none. Its content goes into the startup script, read by the host after the image's /etc/orca-host/env.tpl, so a variable set in both takes the local value. References, not values: the instance's metadata and the state may carry it. The Makefile sets it when the file exists."
   type        = string
   default     = ""
 }
@@ -48,7 +48,7 @@ variable "data_disk_gb" {
 }
 
 variable "boot_disk_gb" {
-  description = "The boot disk: Flatcar, nothing else. Replaced with the VM."
+  description = "The boot disk: Debian and what the startup script installs, nothing else. Replaced with the VM."
   type        = number
   default     = 20
 }
