@@ -15,7 +15,7 @@ A headless [Orca](https://github.com/stablyai/orca) server on a GCP VM, used fro
 | Your own binaries and MCP servers | an image of yours, `FROM` this one, optional |
 | What a project needs | that project's repository |
 
-Neither file holds a secret: in `.env.tpl` a secret is a reference, `{{ op://Vault/Item/field }}`, resolved by the host. Keep both in a repository of yours, or here, gitignored; `TFVARS` and `ENV_TPL` tell `make` where they are (default `terraform/$PROVIDER/terraform.tfvars`, i.e. `terraform/gcp/terraform.tfvars`, and `.env.tpl`).
+Neither file holds a secret: in `.env.tpl` a secret is a reference, `{{ op://Vault/Item/field }}`, resolved by the host. Keep both in a repository of yours, or here, gitignored; `TFVARS` and `ENV_TPL` tell `make` where they are (default `terraform/$PROVIDER/terraform.tfvars`, i.e. `terraform/gcp/terraform.tfvars`, and `.env.tpl`). Secrets in other 1Password accounts: [Several 1Password accounts](#several-1password-accounts).
 
 ## Install
 
@@ -85,7 +85,7 @@ In the app: Add a project → Clone from URL, the https URL, parent folder `/hom
 
 <img src="docs/orca-add-project.png" width="49%" alt="Add a project"> <img src="docs/orca-clone-from-url.png" width="49%" alt="Clone from URL">
 
-A project brings itself up from its worktree setup hook: `docker compose`, `.env` files — `op inject -i .env.tpl -o .env` works as is, against the host's vault. What it starts is at `http://<tailnet IP>:<port>`. A deleted worktree's stack is torn down within 5 minutes, volumes included.
+A project brings itself up from its worktree setup hook: `docker compose`, `.env` files — `op inject -i .env.tpl -o .env` works as is, against the host's vault; against another account's, `OP_SERVICE_ACCOUNT_TOKEN="$OP_SERVICE_ACCOUNT_TOKEN_<NAME>" op inject …`. What it starts is at `http://<tailnet IP>:<port>`. A deleted worktree's stack is torn down within 5 minutes, volumes included.
 
 ## Claude settings
 
@@ -93,6 +93,20 @@ Two optional lines in `.env.tpl`:
 
 - `CLAUDE_PERMISSION_MODE`: `default`, `acceptEdits`, `auto` or `plan`.
 - `CLAUDE_SETTINGS_REPO`: `<owner>/<repo>`; its `permissions`, `CLAUDE.md`, `.claude/skills/` and `config/mcp.json` are applied at every start. With `auto`, `op` needs an allow rule there. Details: [claude-settings.md](.claude/knowledge/claude-settings.md).
+
+## Several 1Password accounts
+
+A service account reads one vault of one account. For each other account, a service account on its vault, read-only, and a second template next to `.env.tpl`:
+
+```sh
+# .env.tpl: the token, an item of the host's vault
+OP_SERVICE_ACCOUNT_TOKEN_ACME={{ op://Vault/acme-op-token/credential }}
+
+# .env.acme.tpl: resolved with that token
+ACME_API_TOKEN={{ op://Acme Vault/api/credential }}
+```
+
+The host resolves `.env.tpl`, then each `.env.<name>.tpl` with `OP_SERVICE_ACCOUNT_TOKEN_<NAME>`; every variable reaches the sessions resolved. A file that does not resolve keeps the host down, as `.env.tpl` does. Each token is in every session too, so each of those vaults is technical and read-only as well.
 
 ## Your own tools
 
@@ -102,8 +116,9 @@ An image of yours, built by your CI, public:
 FROM ghcr.io/qrafttech/orca-host:main@sha256:<digest>
 RUN curl -fsSL -o /tmp/x "<url>" && echo "<sha256>  /tmp/x" | sha256sum -c - \
  && install -m 755 /tmp/x /usr/local/bin/<tool> && rm /tmp/x
-# optional: your .env.tpl travels with the image; the laptop's, if any, wins over it
+# optional: your templates travel with the image; the laptop's, if any, win over them
 COPY .env.tpl /etc/orca-host/env.tpl
+COPY .env.acme.tpl /etc/orca-host/env.acme.tpl
 ```
 
 Then `orca_image = "ghcr.io/me/orca-host:main"` in `terraform.tfvars`, and `make rebuild`, once. To keep the `FROM` up to date, `.github/dependabot.yml` in that repository:
@@ -121,8 +136,8 @@ updates:
 | You changed | You do |
 |---|---|
 | this repository, merged to `main` | nothing if the host runs the base image; else merge Dependabot's pull request in yours |
-| your own image, merged to its `main`, `.env.tpl` in it included | nothing: the host redeploys within five minutes |
-| a token in 1Password, the laptop's `.env.tpl`, your settings repository | `make restart` |
+| your own image, merged to its `main`, its templates included | nothing: the host redeploys within five minutes |
+| a token in 1Password, the laptop's templates, your settings repository | `make restart` |
 | `orca_image`, `compose.yaml`, `host/` | `make rebuild` |
 | `zone`, to the other of `data_disk_zones` (the VM's zone is out of stock, or down) | `make apply` |
 | nothing, but the service-account token expired | a new token in its item, `make secret`, `make restart` |

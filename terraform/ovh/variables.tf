@@ -18,10 +18,14 @@ variable "op_vault" {
   type        = string
 }
 
-variable "env_tpl" {
-  description = "Path to the local .env.tpl, empty for none. Its content goes into the install script, read by the host after the image's /etc/orca-host/env.tpl. References, not values. The Makefile sets it when the file exists."
-  type        = string
-  default     = ""
+variable "env_tpls" {
+  description = "The local templates, by their name on the host (env.tpl, env.<name>.tpl) to their path; empty for none. Their content goes into the first-boot script, read by the host after the image's /etc/orca-host/env*.tpl, so a variable set in both takes the local value. References, not values: the OVH reinstall request and the state may carry them. The Makefile sets it from ENV_TPL and the files next to it."
+  type        = map(string)
+  default     = {}
+  validation {
+    condition     = alltrue([for k in keys(var.env_tpls) : can(regex("^env(\\.[a-z0-9_]+)?\\.tpl$", k))])
+    error_message = "env_tpls keys are env.tpl or env.<name>.tpl, <name> in lowercase letters, digits and _."
+  }
 }
 
 variable "ssh_public_key" {

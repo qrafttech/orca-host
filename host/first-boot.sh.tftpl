@@ -71,8 +71,8 @@ chmod 0600 /home/core/.ssh/authorized_keys
 printf 'PasswordAuthentication no\nKbdInteractiveAuthentication no\n' > /etc/ssh/sshd_config.d/00-orca.conf
 systemctl reload ssh
 
-# /opt/orca: what the units run and read. host.env is the host's own values; env.tpl is the laptop's, if any,
-# references, not values. `make restart` writes env.tpl again, so a line added since needs no reinstall.
+# /opt/orca: what the units run and read. host.env is the host's own values; env*.tpl are the laptop's templates, if
+# any, references, not values. `make restart` writes them again, so a line or a file added since needs no reinstall.
 mkdir -p /opt/orca
 cat > /opt/orca/host.env <<'ORCA_EOF'
 TS_HOSTNAME=${name}
@@ -83,12 +83,13 @@ ORCA_EOF
 cat > /opt/orca/compose.yaml <<'ORCA_EOF'
 ${compose}
 ORCA_EOF
-%{ if env_tpl != "" ~}
-(umask 077; cat > /opt/orca/env.tpl <<'ORCA_EOF'
-${env_tpl}
+rm -f /opt/orca/env.tpl /opt/orca/env.*.tpl
+%{ for tpl, content in env_tpls ~}
+(umask 077; cat > /opt/orca/${tpl} <<'ORCA_EOF'
+${content}
 ORCA_EOF
 )
-%{ endif ~}
+%{ endfor ~}
 %{ for file, content in scripts ~}
 cat > /opt/orca/${file} <<'ORCA_EOF'
 ${content}

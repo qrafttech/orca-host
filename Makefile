@@ -5,9 +5,14 @@
 # is the natural place) or kept here, gitignored: TFVARS, the host's name, project, zone, SSH key; ENV_TPL, the
 # variables the host starts with, `VAR=value` per line, a secret as a `{{ op://Vault/Item/field }}` reference.
 # A reference is not a secret: 1Password holds the values, and nothing else.
-# The host reads the image's /etc/orca-host/env.tpl, then ENV_TPL (Terraform carries it, `make restart` copies it
-# again), and resolves both at every boot with a service account. `make env` does the same here, with your own account. What the host needs from this
-# laptop is that account's token — `make secret`, once.
+# A service account reads one vault of one 1Password account. For a secret in another account: a service account
+# created in that account, its token an item of the host's vault, read by a line OP_SERVICE_ACCOUNT_TOKEN_<NAME> of
+# ENV_TPL; the references to that account go in a second template next to ENV_TPL, .env.<name>.tpl, resolved with it.
+# A template comes from one of two places, both optional, read in this order, the last line of a variable winning:
+#   the image      /etc/orca-host/env.tpl and env.<name>.tpl, which a derived image COPYs: a push reaches the host
+#   this laptop    ENV_TPL and the .env.<name>.tpl next to it: Terraform carries them, `make restart` copies them
+# The host resolves them at every boot with its service account, through inject-env.sh. `make env` does the same
+# here, with your own account. What the host needs from this laptop is that account's token — `make secret`, once.
 PROVIDER ?= gcp
 TF_DIR    = terraform/$(PROVIDER)
 TFVARS  ?= $(TF_DIR)/terraform.tfvars
@@ -20,14 +25,13 @@ REGION   = $(shell echo $(ZONE) | sed 's/-[a-z]$$//')
 BUCKET   = $(or $(shell sed -n 's/^state_bucket *= *"\(.*\)".*/\1/p' $(TFVARS) 2>/dev/null),$(PROJECT)-tfstate)
 OP_VAULT  = $(shell sed -n 's/^op_vault *= *"\(.*\)".*/\1/p' $(TFVARS) 2>/dev/null)
 OP_TOKEN  = op://$(OP_VAULT)/orca-host-service-account/credential
-# The image's template, then the local one; the last line of a variable wins, as on the host (render-env).
-READ_TPL  = { docker run --rm --entrypoint sh $(ORCA_IMAGE) -c '[ ! -f /etc/orca-host/env.tpl ] || cat /etc/orca-host/env.tpl'; \
-	      [ ! -f $(ENV_TPL) ] || cat $(ENV_TPL); }
-LAST_WINS = awk -F= '/^[A-Za-z_][A-Za-z0-9_]*=/ { if (!($$1 in v)) k[n++] = $$1; v[$$1] = $$0 } END { for (i = 0; i < n; i++) print v[k[i]] }'
+# The templates on this laptop: ENV_TPL and the .env.<name>.tpl next to it, and the name each takes on the host.
+LOCAL_TPLS = $(wildcard $(ENV_TPL) $(basename $(ENV_TPL)).*.tpl)
+host_tpl   = $(if $(filter $(ENV_TPL),$(1)),env.tpl,env.$(patsubst $(basename $(ENV_TPL)).%.tpl,%,$(1)).tpl)
 TF       = $(if $(filter ovh,$(PROVIDER)),$(TF_OVH),terraform -chdir=$(TF_DIR))
 # OVH's API credentials, items of 1Password: `op run` resolves the references into the environment of the tools
 # container, for Terraform's ovh provider and the ovhcloud CLI alike. The state is in GCS: application-default
-# credentials. TFVARS and ENV_TPL are mounted at their own paths, so TF_VARS reads the same inside.
+# credentials. TFVARS and the laptop's templates are mounted at their own paths, so TF_VARS reads the same inside.
 TOOLS     := orca-host-tools:dev
 OVH_ITEM  ?= op://$(OP_VAULT)/ovh-api
 ADC       ?= $(HOME)/.config/gcloud/application_default_credentials.json
@@ -37,11 +41,13 @@ TF_OVH    = OVH_ENDPOINT="$(OVH_ITEM)/endpoint" OVH_APPLICATION_KEY="$(OVH_ITEM)
 	      -e OVH_ENDPOINT -e OVH_APPLICATION_KEY -e OVH_APPLICATION_SECRET -e OVH_CONSUMER_KEY \
 	      -e GOOGLE_APPLICATION_CREDENTIALS=/adc.json -v $(ADC):/adc.json:ro \
 	      -v $(CURDIR):$(CURDIR) -v $(abspath $(TFVARS)):$(abspath $(TFVARS)):ro \
-	      $(if $(wildcard $(ENV_TPL)),-v $(abspath $(ENV_TPL)):$(abspath $(ENV_TPL)):ro) \
+	      $(foreach f,$(LOCAL_TPLS),-v $(abspath $(f)):$(abspath $(f)):ro) \
 	      -w $(CURDIR) $(TOOLS) -chdir=$(TF_DIR)
 REPLACE   = $(if $(filter ovh,$(PROVIDER)),terraform_data.install,google_compute_instance.vm)
-# TFVARS by path, wherever it is; ENV_TPL only when it exists, its content goes into the first-boot script
-TF_VARS  = -var-file=$(abspath $(TFVARS)) $(if $(wildcard $(ENV_TPL)),-var env_tpl=$(abspath $(ENV_TPL)))
+# TFVARS by path, wherever it is; the laptop's templates when there are any, their content goes into the first-boot
+# script
+TF_VARS  = -var-file=$(abspath $(TFVARS)) \
+	   $(if $(LOCAL_TPLS),-var 'env_tpls={$(foreach f,$(LOCAL_TPLS),"$(call host_tpl,$(f))"="$(abspath $(f))",)}')
 # Every rebuild is a new host key, and the tailnet already authenticates the peer: no host-key check for this host.
 SSH     := ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR
 # What `make up` runs, the same variable a host uses: `make build`'s output by default, any reference on request.
@@ -51,13 +57,18 @@ ORCA_IMAGE ?= orca-host:dev
 # A failed `op inject` (locked vault, missing item) must not leave an empty file that Make then takes as up to date.
 .DELETE_ON_ERROR:
 
-# Both recipes pipe, and `sh` has no pipefail: a failed `op` would exit 0 through the next command and write an
-# empty file, or hand the host an empty token. bash for these two, so the pipeline fails with its first command.
-env secret: SHELL := /bin/bash
-env secret: .SHELLFLAGS := -o pipefail -c
+# `secret` pipes, and `sh` has no pipefail: a failed `op` would exit 0 through the next command and hand the host
+# an empty token. bash for it, so the pipeline fails with its first command.
+secret: SHELL := /bin/bash
+secret: .SHELLFLAGS := -o pipefail -c
 
+# The templates in ORCA_IMAGE's /etc/orca-host first, then the laptop's, as on the host (render-env); an image that
+# is not there has none.
 env:                ## the env file, resolved from the templates with your own account, into ./env. `rm env` to redo it.
-	$(READ_TPL) | op inject | $(LAST_WINS) > $@ && chmod 600 $@
+	img=$$(mktemp -d) && trap 'rm -rf "$$img"' EXIT && \
+	  if cid=$$(docker create $(ORCA_IMAGE) 2>/dev/null); then \
+	    docker cp $$cid:/etc/orca-host/. $$img/ >/dev/null 2>&1; docker rm $$cid >/dev/null; fi && \
+	  ./inject-env.sh $$img/*.tpl $(LOCAL_TPLS) > $@ && chmod 600 $@
 
 $(TFVARS):
 	@echo "$@ is missing: fill in $(TF_DIR)/terraform.tfvars.example there, or point TFVARS at yours"; exit 1
@@ -143,11 +154,13 @@ pair-mobile:        ## restart the server on its mobile link, show it as a QR fo
 	  read -r _ || { echo; echo "no terminal to wait on: scan it, then \`make restart\`"; exit 1; }
 	$(SSH) core@$(NAME) sudo systemctl restart orca-env orca
 
-# ENV_TPL first, when there is one: the first-boot script wrote it at install, so a line added since reaches the host
-# here, with no rebuild. compose recreates the container only when its image or its env file changed: a push to the
-# settings repository changes neither, so the container is restarted as well, and its entrypoint runs again.
-restart:            ## copy ENV_TPL, re-render the env file from 1Password, re-run the stack and the entrypoint. Ends live terminals.
-	$(if $(wildcard $(ENV_TPL)),$(SSH) core@$(NAME) "sudo sh -c 'umask 077; cat > /opt/orca/env.tpl.tmp && mv /opt/orca/env.tpl.tmp /opt/orca/env.tpl'" < $(ENV_TPL))
+# The laptop's templates first, when there are any: the first-boot script wrote them at install, so a line or a file
+# added since reaches the host here, with no rebuild, and one removed since is removed there. compose recreates the
+# container only when its image or its env file changed: a push to the settings repository changes neither, so the
+# container is restarted as well, and its entrypoint runs again.
+restart:            ## copy the laptop's templates, re-render the env file from 1Password, re-run the stack and the entrypoint. Ends live terminals.
+	$(if $(LOCAL_TPLS),$(SSH) core@$(NAME) 'sudo rm -f /opt/orca/env.tpl /opt/orca/env.*.tpl' && \
+	  $(foreach f,$(LOCAL_TPLS),$(SSH) core@$(NAME) "sudo sh -c 'umask 077; cat > /opt/orca/$(call host_tpl,$(f))'" < $(f) &&) true)
 	$(SSH) core@$(NAME) 'sudo systemctl restart orca-env orca && docker restart orca-host'
 
 logs:

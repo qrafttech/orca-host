@@ -30,10 +30,11 @@ locals {
     ssh_key     = var.ssh_public_key
     data_device = var.data_device
     compose     = trimsuffix(file("${path.module}/../../compose.yaml"), "\n")
-    env_tpl     = var.env_tpl == "" ? "" : trimsuffix(file(var.env_tpl), "\n")
-    scripts = {
-      for f in ["render-env", "up", "firewall"] : f => trimsuffix(file("${path.module}/../../host/${f}"), "\n")
-    }
+    env_tpls    = { for k, f in var.env_tpls : k => trimsuffix(file(f), "\n") }
+    scripts = merge(
+      { for f in ["render-env", "up", "firewall"] : f => trimsuffix(file("${path.module}/../../host/${f}"), "\n") },
+      { inject-env = trimsuffix(file("${path.module}/../../inject-env.sh"), "\n") },
+    )
     units = {
       for f in ["orca-env.service", "orca.service", "orca-update.service", "orca-update.timer"] :
       f => trimsuffix(file("${path.module}/../../host/${f}"), "\n")
