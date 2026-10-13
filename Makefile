@@ -1,5 +1,5 @@
 # orca-host, laptop side. Needs: docker, terraform, gcloud, op (1Password CLI), jq, ssh, qrencode, the Orca desktop CLI.
-# PROVIDER: gcp, the default (terraform/), or ovh (terraform/ovh/, an OVH VPS). On ovh, Terraform and the ovhcloud
+# PROVIDER: gcp, the default, or ovh (an OVH VPS); the Terraform root is terraform/$(PROVIDER)/. On ovh, Terraform and the ovhcloud
 # CLI run from the image `make tools` builds: Docker, op and gcloud's application-default credentials are enough.
 # Two per-person files, plain configuration, versioned wherever you keep your host (the repository of your own image
 # is the natural place) or kept here, gitignored: TFVARS, the host's name, project, zone, SSH key; ENV_TPL, the
@@ -9,7 +9,7 @@
 # again), and resolves both at every boot with a service account. `make env` does the same here, with your own account. What the host needs from this
 # laptop is that account's token — `make secret`, once.
 PROVIDER ?= gcp
-TF_DIR    = $(if $(filter ovh,$(PROVIDER)),terraform/ovh,terraform)
+TF_DIR    = terraform/$(PROVIDER)
 TFVARS  ?= $(TF_DIR)/terraform.tfvars
 ENV_TPL ?= .env.tpl
 # `=`, not `:=`: expanded in recipes, once $(TFVARS) is known to exist. At parse time it may not.
@@ -24,7 +24,7 @@ OP_TOKEN  = op://$(OP_VAULT)/orca-host-service-account/credential
 READ_TPL  = { docker run --rm --entrypoint sh $(ORCA_IMAGE) -c '[ ! -f /etc/orca-host/env.tpl ] || cat /etc/orca-host/env.tpl'; \
 	      [ ! -f $(ENV_TPL) ] || cat $(ENV_TPL); }
 LAST_WINS = awk -F= '/^[A-Za-z_][A-Za-z0-9_]*=/ { if (!($$1 in v)) k[n++] = $$1; v[$$1] = $$0 } END { for (i = 0; i < n; i++) print v[k[i]] }'
-TF       = $(if $(filter ovh,$(PROVIDER)),$(TF_OVH),terraform -chdir=terraform)
+TF       = $(if $(filter ovh,$(PROVIDER)),$(TF_OVH),terraform -chdir=$(TF_DIR))
 # OVH's API credentials, items of 1Password: `op run` resolves the references into the environment of the tools
 # container, for Terraform's ovh provider and the ovhcloud CLI alike. The state is in GCS: application-default
 # credentials. TFVARS and ENV_TPL are mounted at their own paths, so TF_VARS reads the same inside.
@@ -38,7 +38,7 @@ TF_OVH    = OVH_ENDPOINT="$(OVH_ITEM)/endpoint" OVH_APPLICATION_KEY="$(OVH_ITEM)
 	      -e GOOGLE_APPLICATION_CREDENTIALS=/adc.json -v $(ADC):/adc.json:ro \
 	      -v $(CURDIR):$(CURDIR) -v $(abspath $(TFVARS)):$(abspath $(TFVARS)):ro \
 	      $(if $(wildcard $(ENV_TPL)),-v $(abspath $(ENV_TPL)):$(abspath $(ENV_TPL)):ro) \
-	      -w $(CURDIR) $(TOOLS) -chdir=terraform/ovh
+	      -w $(CURDIR) $(TOOLS) -chdir=$(TF_DIR)
 REPLACE   = $(if $(filter ovh,$(PROVIDER)),terraform_data.install,google_compute_instance.vm)
 # TFVARS by path, wherever it is; ENV_TPL only when it exists, its content goes into the first-boot script
 TF_VARS  = -var-file=$(abspath $(TFVARS)) $(if $(wildcard $(ENV_TPL)),-var env_tpl=$(abspath $(ENV_TPL)))
@@ -60,7 +60,7 @@ env:                ## the env file, resolved from the templates with your own a
 	$(READ_TPL) | op inject | $(LAST_WINS) > $@ && chmod 600 $@
 
 $(TFVARS):
-	@echo "$@ is missing: fill in terraform/terraform.tfvars.example there, or point TFVARS at yours"; exit 1
+	@echo "$@ is missing: fill in $(TF_DIR)/terraform.tfvars.example there, or point TFVARS at yours"; exit 1
 
 ## image and stack, on this laptop
 build:              ## build the image for this machine's architecture, as orca-host:dev

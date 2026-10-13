@@ -1,6 +1,6 @@
 # Architecture
 
-Image, stack, host. Each layer works without the one above it: the image runs on any Docker host, the stack on any Linux Docker host with `/dev/net/tun`, Terraform brings up a VM that runs the stack: Debian, made into a host by one script, `host/first-boot.sh.tftpl`, the same on every provider. One Terraform root per provider: `terraform/` on GCP, `terraform/ovh/` on an OVH VPS (below, **An OVH host**).
+Image, stack, host. Each layer works without the one above it: the image runs on any Docker host, the stack on any Linux Docker host with `/dev/net/tun`, Terraform brings up a VM that runs the stack: Debian, made into a host by one script, `host/first-boot.sh.tftpl`, the same on every provider. One Terraform root per provider, `terraform/<provider>/`, picked by `PROVIDER`: `terraform/gcp/`, the default, and `terraform/ovh/` for an OVH VPS (below, **An OVH host**).
 
 ```
 laptop / phone ──tailnet──▶ VM (Debian, host/first-boot.sh.tftpl)
@@ -82,7 +82,7 @@ Stopping the stack ends live terminals, as a service restart does.
 
 ## The host
 
-One person, one `terraform apply`, one state, in a bucket of the person's own GCP project: `make bootstrap` creates it, `make init` points Terraform at it, one prefix per host. Terraform authenticates with Application Default Credentials, separate from `gcloud auth login`.
+One person, one `terraform apply`, one state, in a bucket of the person's own GCP project: `make bootstrap` creates it, `make init` points Terraform at it, one prefix per host. Bucket and prefix are given at init (`-backend-config`), not by the root's directory: a root moved in the tree finds its state again with a `make init`. Terraform authenticates with Application Default Credentials, separate from `gcloud auth login`.
 
 The VM is Debian 13. `host/first-boot.sh.tftpl`, rendered by Terraform from `compose.yaml` and the files under `host/`, is everything the VM is: GCP runs it as the instance's `startup-script`, at every boot, and it stops at its first lines when the hash of the script it last applied, kept on the boot disk, is its own; OVH runs it once after a reinstall. Idempotent either way:
 

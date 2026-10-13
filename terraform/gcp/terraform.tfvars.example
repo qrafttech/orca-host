@@ -1,4 +1,4 @@
-# Copy to terraform/terraform.tfvars (gitignored), or keep it in your own repository and point TFVARS at it. No secret.
+# Copy to terraform/gcp/terraform.tfvars (gitignored), or keep it in your own repository and point TFVARS at it. No secret.
 name           = "orca-host"
 project        = "my-gcp-project"
 zone           = "europe-west9-b"

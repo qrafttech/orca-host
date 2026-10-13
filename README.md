@@ -15,7 +15,7 @@ A headless [Orca](https://github.com/stablyai/orca) server on a GCP VM, used fro
 | Your own binaries and MCP servers | an image of yours, `FROM` this one, optional |
 | What a project needs | that project's repository |
 
-Neither file holds a secret: in `.env.tpl` a secret is a reference, `{{ op://Vault/Item/field }}`, resolved by the host. Keep both in a repository of yours, or here, gitignored; `TFVARS` and `ENV_TPL` tell `make` where they are (default `terraform/terraform.tfvars` and `.env.tpl`).
+Neither file holds a secret: in `.env.tpl` a secret is a reference, `{{ op://Vault/Item/field }}`, resolved by the host. Keep both in a repository of yours, or here, gitignored; `TFVARS` and `ENV_TPL` tell `make` where they are (default `terraform/$PROVIDER/terraform.tfvars`, i.e. `terraform/gcp/terraform.tfvars`, and `.env.tpl`).
 
 ## Install
 
@@ -27,7 +27,7 @@ Needed on the laptop: `docker`, `terraform`, `gcloud`, `op` (1Password CLI), `jq
 
 2. **Once per GCP project**: `gcloud auth application-default login`, then `make bootstrap`.
 3. **A 1Password vault for the host**: the tokens your agents use, no passwords. A service account on it, read-only; its token in an item `orca-host-service-account` of that vault.
-4. **`terraform.tfvars`**: `terraform/terraform.tfvars.example`, filled in.
+4. **`terraform/gcp/terraform.tfvars`**: `terraform/gcp/terraform.tfvars.example`, filled in.
 5. **`.env.tpl`**, one `VAR=value` per line, each secret an item in that vault:
 
    ```sh

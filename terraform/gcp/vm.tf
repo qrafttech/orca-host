@@ -7,19 +7,19 @@ data "google_compute_image" "debian" {
 }
 
 locals {
-  first_boot = templatefile("${path.module}/../host/first-boot.sh.tftpl", {
+  first_boot = templatefile("${path.module}/../../host/first-boot.sh.tftpl", {
     name        = var.name
     orca_image  = var.orca_image
     ssh_key     = var.ssh_public_key
     data_device = "/dev/disk/by-id/scsi-0Google_PersistentDisk_${google_compute_region_disk.data.name}"
-    compose     = trimsuffix(file("${path.module}/../compose.yaml"), "\n")
+    compose     = trimsuffix(file("${path.module}/../../compose.yaml"), "\n")
     env_tpl     = var.env_tpl == "" ? "" : trimsuffix(file(var.env_tpl), "\n")
     scripts = {
-      for f in ["render-env", "up", "firewall"] : f => trimsuffix(file("${path.module}/../host/${f}"), "\n")
+      for f in ["render-env", "up", "firewall"] : f => trimsuffix(file("${path.module}/../../host/${f}"), "\n")
     }
     units = {
       for f in ["orca-env.service", "orca.service", "orca-update.service", "orca-update.timer"] :
-      f => trimsuffix(file("${path.module}/../host/${f}"), "\n")
+      f => trimsuffix(file("${path.module}/../../host/${f}"), "\n")
     }
   })
 }
