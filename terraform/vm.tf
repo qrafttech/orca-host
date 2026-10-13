@@ -14,7 +14,8 @@ data "ct_config" "ignition" {
     orca_image  = var.orca_image
     ssh_key     = var.ssh_public_key
     compose     = file("${path.module}/../compose.yaml")
-    env_tpl     = var.env_tpl == "" ? "" : file(var.env_tpl)
+    env_tpls    = { for k, f in var.env_tpls : k => file(f) }
+    inject_env  = file("${path.module}/../inject-env.sh")
     data_device = "/dev/disk/by-id/scsi-0Google_PersistentDisk_${google_compute_region_disk.data.name}"
   })
 }

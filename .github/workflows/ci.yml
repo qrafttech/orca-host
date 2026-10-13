@@ -15,7 +15,7 @@ jobs:
       - uses: hadolint/hadolint-action@v3.1.0
         with:
           dockerfile: Dockerfile
-      - run: shellcheck entrypoint.sh prune-stacks.sh
+      - run: shellcheck entrypoint.sh prune-stacks.sh inject-env.sh
       - uses: hashicorp/setup-terraform@v3
       - run: terraform -chdir=terraform fmt -check -diff
       - run: terraform -chdir=terraform init -backend=false && terraform -chdir=terraform validate
