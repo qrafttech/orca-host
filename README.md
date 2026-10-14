@@ -26,7 +26,7 @@ Needed on the laptop: `docker`, `terraform`, `gcloud`, `op` (1Password CLI), `jq
    <img src="docs/tailscale-tag.png" width="49%" alt="Create tag">
 
 2. **Once per GCP project**: `gcloud auth application-default login`, then `make bootstrap`.
-3. **A 1Password vault for the host**: the tokens your agents use, no passwords. A service account on it, read-only; its token in an item `orca-host-1password-service-account` of that vault.
+3. **A 1Password vault for the host**: the tokens your agents use, no passwords. A service account on it, read-only; its token in an item of that vault named like the GCP secret, `<name>-op-token`.
 4. **`terraform.tfvars`**: `terraform/terraform.tfvars.example`, filled in.
 5. **`.env.tpl`**, one `VAR=value` per line, each secret an item in that vault:
 
