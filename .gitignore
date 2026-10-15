@@ -1,9 +1,9 @@
 # per-person values and local state
-terraform/terraform.tfvars
+terraform/**/terraform.tfvars
 .env.tpl
 .env.*.tpl
-terraform/.terraform/
-terraform/*.tfstate*
+.terraform/
+*.tfstate*
 # the env file rendered by `make env`
 env
 # laptop compose state

@@ -15,10 +15,27 @@ jobs:
       - uses: hadolint/hadolint-action@v3.1.0
         with:
           dockerfile: Dockerfile
-      - run: shellcheck entrypoint.sh prune-stacks.sh inject-env.sh
+      - uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: tools/Dockerfile
+      - run: shellcheck entrypoint.sh prune-stacks.sh inject-env.sh && shellcheck -s sh host/render-env host/up host/firewall
       - uses: hashicorp/setup-terraform@v3
-      - run: terraform -chdir=terraform fmt -check -diff
-      - run: terraform -chdir=terraform init -backend=false && terraform -chdir=terraform validate
+      - run: terraform fmt -check -diff -recursive terraform && terraform fmt -check -diff -recursive test
+      - run: for d in terraform/gcp terraform/ovh; do terraform -chdir=$d init -backend=false && terraform -chdir=$d validate || exit 1; done
+      # the first-boot script as a VM runs it, every branch of its template rendered
+      - run: |
+          terraform -chdir=test/first-boot init && terraform -chdir=test/first-boot apply -auto-approve
+          terraform -chdir=test/first-boot output -raw script > first-boot.sh
+          shellcheck first-boot.sh
+      # the firewall as the script writes it, open then locked down, checked by nft without loading it
+      - run: |
+          for lockdown in no yes; do
+            docker run --rm --cap-add NET_ADMIN -e DEBIAN_FRONTEND=noninteractive -e LOCKDOWN=$lockdown -v "$PWD/host/firewall:/firewall:ro" debian:13 sh -c '
+              apt-get update -qq && apt-get install -y -qq nftables >/dev/null
+              printf "#!/bin/sh\nexec /usr/sbin/nft -c \"\$@\"\n" > /usr/local/bin/nft && chmod +x /usr/local/bin/nft
+              mkdir -p /var/lib/orca && [ "$LOCKDOWN" = no ] || touch /var/lib/orca/lockdown
+              sh /firewall' || exit 1
+          done
 
   image:
     runs-on: ubuntu-latest

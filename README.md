@@ -15,7 +15,7 @@ A headless [Orca](https://github.com/stablyai/orca) server on a GCP VM, used fro
 | Your own binaries and MCP servers | an image of yours, `FROM` this one, optional |
 | What a project needs | that project's repository |
 
-Neither file holds a secret: in `.env.tpl` a secret is a reference, `{{ op://Vault/Item/field }}`, resolved by the host. Keep both in a repository of yours, or here, gitignored; `TFVARS` and `ENV_TPL` tell `make` where they are (default `terraform/terraform.tfvars` and `.env.tpl`). Secrets in other 1Password accounts: [Several 1Password accounts](#several-1password-accounts).
+Neither file holds a secret: in `.env.tpl` a secret is a reference, `{{ op://Vault/Item/field }}`, resolved by the host. Keep both in a repository of yours, or here, gitignored; `TFVARS` and `ENV_TPL` tell `make` where they are (default `terraform/$PROVIDER/terraform.tfvars`, i.e. `terraform/gcp/terraform.tfvars`, and `.env.tpl`). Secrets in other 1Password accounts: [Several 1Password accounts](#several-1password-accounts).
 
 ## Install
 
@@ -26,12 +26,12 @@ Needed on the laptop: `docker`, `terraform`, `gcloud`, `op` (1Password CLI), `jq
    <img src="docs/tailscale-tag.png" width="49%" alt="Create tag">
 
 2. **Once per GCP project**: `gcloud auth application-default login`, then `make bootstrap`.
-3. **A 1Password vault for the host**: the tokens your agents use, no passwords. A service account on it, read-only; its token in an item of that vault named like the GCP secret, `<name>-op-token`.
-4. **`terraform.tfvars`**: `terraform/terraform.tfvars.example`, filled in.
+3. **A 1Password vault for the host**: the tokens your agents use, no passwords. A service account on it, read-only; its token in an item `orca-host-op-token` of that vault, one for all your hosts.
+4. **`terraform/gcp/terraform.tfvars`**: `terraform/gcp/terraform.tfvars.example`, filled in.
 5. **`.env.tpl`**, one `VAR=value` per line, each secret an item in that vault:
 
    ```sh
-   # Tailscale → Settings → Keys: not reusable, not ephemeral, tag orca-host
+   # Tailscale → Settings → Keys: not reusable, not ephemeral, tag orca-host. Used once: a new host, a new key
    TS_AUTHKEY={{ op://Vault/tailscale/authkey }}
    # `claude setup-token`
    CLAUDE_CODE_OAUTH_TOKEN={{ op://Vault/claude/token }}
@@ -52,12 +52,32 @@ Needed on the laptop: `docker`, `terraform`, `gcloud`, `op` (1Password CLI), `jq
 
    ```bash
    make init      # once per checkout
-   make apply     # VPC, service account, secret, data disk, VM
-   make secret    # the service-account token into Secret Manager
+   make apply     # VPC, data disk, a Debian VM made into the host at its first boot
+   make secret    # the service-account token, over SSH (IAP until the host is on the tailnet)
    make pair      # the desktop client, then the phone (Tailscale on, same tailnet)
    ```
 
    Then, in the desktop app: Settings → Remote Orca Servers → Advanced → Active Server.
+
+## On an OVH VPS
+
+The same host on an OVH VPS, Debian underneath. `PROVIDER=ovh` on every `make` (or exported); Terraform and the OVH CLI run from an image, so `terraform` is not needed. The state is in a GCS bucket all the same (`make bootstrap` above), read with application-default credentials, or else gcloud's active account. Steps 1, 3 and 5 above apply; the host's `name` is its own, not another host's: it names the state, the tailnet node and the token item.
+
+1. **The VPS**: `make apply` orders one (`plan_code`, `datacenter`), paid with the account's default payment method; or one already ordered, its `service_name` in the tfvars. An additional disk keeps `/var/lib/orca` across reinstalls.
+2. **OVH API credentials** ([createtoken](https://eu.api.ovh.com/createToken/?GET=/vps/*&POST=/vps/*&PUT=/vps/*&POST=/order/cart*&GET=/me/payment/method&GET=/me/order*&POST=/me/order*), these rights filled in: `GET/POST/PUT /vps/*`, and to order `POST /order/cart*`, `GET/POST /me/order*`, `GET /me/payment/method`) as an item `ovh-api` of the vault: fields `endpoint` (`ovh-eu`), `application_key`, `application_secret`, `consumer_key`.
+3. **`terraform/ovh/terraform.tfvars`**: `terraform/ovh/terraform.tfvars.example`, filled in. `.env.tpl` as above.
+4. **The host**:
+
+   ```bash
+   export PROVIDER=ovh
+   make init      # once per checkout
+   make apply     # orders or imports the VPS, reinstalls it: Debian, Docker, the stack
+   make secret    # the service-account token, over SSH: the public address the first time
+   make pair
+   make lockdown  # SSH on the tailnet only
+   ```
+
+`make apply` reinstalls the VPS: what is on it goes.
 
 ## Projects
 
@@ -118,7 +138,7 @@ updates:
 | this repository, merged to `main` | nothing if the host runs the base image; else merge Dependabot's pull request in yours |
 | your own image, merged to its `main`, its templates included | nothing: the host redeploys within five minutes |
 | a token in 1Password, the laptop's templates, your settings repository | `make restart` |
-| `orca_image`, `compose.yaml`, `terraform/ignition.yaml.tftpl` | `make rebuild` |
+| `orca_image`, `compose.yaml`, `host/` | `make rebuild` |
 | `zone`, to the other of `data_disk_zones` (the VM's zone is out of stock, or down) | `make apply` |
 | nothing, but the service-account token expired | a new token in its item, `make secret`, `make restart` |
 
