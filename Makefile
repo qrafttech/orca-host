@@ -24,7 +24,7 @@ ZONE     = $(or $(shell sed -n 's/^zone *= *"\(.*\)".*/\1/p' $(TFVARS) 2>/dev/nu
 REGION   = $(shell echo $(ZONE) | sed 's/-[a-z]$$//')
 BUCKET   = $(or $(shell sed -n 's/^state_bucket *= *"\(.*\)".*/\1/p' $(TFVARS) 2>/dev/null),$(PROJECT)-tfstate)
 OP_VAULT  = $(shell sed -n 's/^op_vault *= *"\(.*\)".*/\1/p' $(TFVARS) 2>/dev/null)
-OP_TOKEN  = op://$(OP_VAULT)/$(NAME)-op-token/credential
+OP_TOKEN ?= op://$(OP_VAULT)/orca-host-op-token/credential
 # The templates on this laptop: ENV_TPL and the .env.<name>.tpl next to it, and the name each takes on the host.
 LOCAL_TPLS = $(wildcard $(ENV_TPL) $(basename $(ENV_TPL)).*.tpl)
 host_tpl   = $(if $(filter $(ENV_TPL),$(1)),env.tpl,env.$(patsubst $(basename $(ENV_TPL)).%.tpl,%,$(1)).tpl)
