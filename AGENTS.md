@@ -27,7 +27,7 @@ A VM that runs `orca serve` headless, one host per person, all of that person's 
 | Step | Today | Target |
 |---|---|---|
 | Tailscale tag | admin console, once per tailnet | — |
-| host name, project, zone, SSH key | `terraform.tfvars`, in the person's repository or gitignored here | — |
+| host name, project, zone, SSH key | `terraform/<provider>/terraform.tfvars` gitignored here, or a file in the person's repository named by `TFVARS` | — |
 | the 1Password vault the host reads: technical, the tokens agents use, no password data | 1Password, once | — |
 | a service account on that vault, read-only, and its token in an item of it | 1Password admin console, once | — |
 | Tailscale auth key | admin console, into a 1Password item `.env.tpl` references | Tailscale API, into that item |
