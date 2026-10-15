@@ -164,7 +164,7 @@ Host <name>
 
 ## An OVH host
 
-`PROVIDER=ovh`, `terraform/ovh/`. The same VM as on GCP: an OVH VPS takes no custom image and no user-data, but a bash script run once at the first boot after a reinstall (`postInstallScript` on `POST /vps/{service}/rebuild`), and that is the first-boot script. It logs to `/var/log/ovh-postinstall.log`.
+`PROVIDER=ovh`, `terraform/ovh/`. The same VM as on GCP: an OVH VPS takes no custom image and no user-data, but a bash script run once at the first boot after a reinstall (`postInstallScript` on `POST /vps/{service}/rebuild`), and that is the first-boot script, sent gzipped and base64-encoded behind a two-line wrapper: OVH answers a 500 to the script as it is, some 18 kB.
 
 - **The VPS** is `ovh_vps`. Without `service_name`, Terraform orders it through OVH's order workflow (cart, checkout, payment by the account's default method): `plan_code` and `datacenter`, Debian as the order's OS, then reinstalled with the script like any other. With `service_name`, the VPS already ordered is imported (`import` with `for_each`). The order arguments are ignored after the creation, so an imported VPS never sees them. `prevent_destroy`: Terraform never terminates one, nor replaces it — which would be a second order. Termination is in the control panel, confirmed by email.
 - **The install** is `terraform_data.install`. The `ovh` provider does not pass a post-install script, so its `local-exec` calls `ovhcloud vps reinstall --from-file` with the image id (looked up by `image_name`), the SSH key and the script. It is replaced, i.e. the VPS reinstalled, when the image or the key changes, or on `make rebuild`; a change of the script alone is stored, not applied.

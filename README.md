@@ -31,7 +31,7 @@ Needed on the laptop: `docker`, `terraform`, `gcloud`, `op` (1Password CLI), `jq
 5. **`.env.tpl`**, one `VAR=value` per line, each secret an item in that vault:
 
    ```sh
-   # Tailscale → Settings → Keys: not reusable, not ephemeral, tag orca-host
+   # Tailscale → Settings → Keys: not reusable, not ephemeral, tag orca-host. Used once: a new host, a new key
    TS_AUTHKEY={{ op://Vault/tailscale/authkey }}
    # `claude setup-token`
    CLAUDE_CODE_OAUTH_TOKEN={{ op://Vault/claude/token }}
@@ -61,10 +61,10 @@ Needed on the laptop: `docker`, `terraform`, `gcloud`, `op` (1Password CLI), `jq
 
 ## On an OVH VPS
 
-The same host on an OVH VPS, Debian underneath. `PROVIDER=ovh` on every `make` (or exported); Terraform and the OVH CLI run from an image, so `terraform` and `gcloud` are not needed, only Google credentials for the state: application-default (`gcloud auth application-default login`, once), or else gcloud's active account.
+The same host on an OVH VPS, Debian underneath. `PROVIDER=ovh` on every `make` (or exported); Terraform and the OVH CLI run from an image, so `terraform` is not needed. The state is in a GCS bucket all the same (`make bootstrap` above), read with application-default credentials, or else gcloud's active account. Steps 1, 3 and 5 above apply; the host's `name` is its own, not another host's: it names the state, the tailnet node and the token item.
 
 1. **The VPS**: `make apply` orders one (`plan_code`, `datacenter`), paid with the account's default payment method; or one already ordered, its `service_name` in the tfvars. An additional disk keeps `/var/lib/orca` across reinstalls.
-2. **OVH API credentials** ([createtoken](https://api.ovh.com/createToken/), rights `GET/POST/PUT /vps/*`, and to order: `POST /order/cart*`, `GET/POST /me/order*`, `GET /me/payment/method`) as an item `ovh-api` of the vault: fields `endpoint` (`ovh-eu`), `application_key`, `application_secret`, `consumer_key`.
+2. **OVH API credentials** ([createtoken](https://eu.api.ovh.com/createToken/?GET=/vps/*&POST=/vps/*&PUT=/vps/*&POST=/order/cart*&GET=/me/payment/method&GET=/me/order*&POST=/me/order*), these rights filled in: `GET/POST/PUT /vps/*`, and to order `POST /order/cart*`, `GET/POST /me/order*`, `GET /me/payment/method`) as an item `ovh-api` of the vault: fields `endpoint` (`ovh-eu`), `application_key`, `application_secret`, `consumer_key`.
 3. **`terraform/ovh/terraform.tfvars`**: `terraform/ovh/terraform.tfvars.example`, filled in. `.env.tpl` as above.
 4. **The host**:
 
@@ -72,7 +72,7 @@ The same host on an OVH VPS, Debian underneath. `PROVIDER=ovh` on every `make` (
    export PROVIDER=ovh
    make init      # once per checkout
    make apply     # orders or imports the VPS, reinstalls it: Debian, Docker, the stack
-   make secret    # the service-account token, over SSH
+   make secret    # the service-account token, over SSH: the public address the first time
    make pair
    make lockdown  # SSH on the tailnet only
    ```
