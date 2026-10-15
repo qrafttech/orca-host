@@ -61,17 +61,17 @@ Needed on the laptop: `docker`, `terraform`, `gcloud`, `op` (1Password CLI), `jq
 
 ## On an OVH VPS
 
-The same host on an OVH VPS, Debian underneath. `PROVIDER=ovh` on every `make` (or exported); Terraform and the OVH CLI run from an image, so `terraform` and `gcloud` are not needed, only application-default credentials for the state (`gcloud auth application-default login`, once).
+The same host on an OVH VPS, Debian underneath. `PROVIDER=ovh` on every `make` (or exported); Terraform and the OVH CLI run from an image, so `terraform` and `gcloud` are not needed, only Google credentials for the state: application-default (`gcloud auth application-default login`, once), or else gcloud's active account.
 
-1. **The VPS**, ordered from the OVH control panel. An additional disk keeps `/var/lib/orca` across reinstalls.
-2. **OVH API credentials** ([createtoken](https://api.ovh.com/createToken/), rights `GET/POST/PUT /vps/*`) as an item `ovh-api` of the vault: fields `endpoint` (`ovh-eu`), `application_key`, `application_secret`, `consumer_key`.
+1. **The VPS**: `make apply` orders one (`plan_code`, `datacenter`), paid with the account's default payment method; or one already ordered, its `service_name` in the tfvars. An additional disk keeps `/var/lib/orca` across reinstalls.
+2. **OVH API credentials** ([createtoken](https://api.ovh.com/createToken/), rights `GET/POST/PUT /vps/*`, and to order: `POST /order/cart*`, `GET/POST /me/order*`, `GET /me/payment/method`) as an item `ovh-api` of the vault: fields `endpoint` (`ovh-eu`), `application_key`, `application_secret`, `consumer_key`.
 3. **`terraform/ovh/terraform.tfvars`**: `terraform/ovh/terraform.tfvars.example`, filled in. `.env.tpl` as above.
 4. **The host**:
 
    ```bash
    export PROVIDER=ovh
    make init      # once per checkout
-   make apply     # imports the VPS, reinstalls it: Debian, Docker, the stack
+   make apply     # orders or imports the VPS, reinstalls it: Debian, Docker, the stack
    make secret    # the service-account token, over SSH
    make pair
    make lockdown  # SSH on the tailnet only

@@ -35,7 +35,7 @@ A VM that runs `orca serve` headless, one host per person, all of that person's 
 | the tokens your MCP servers and your own tools read | 1Password items, referenced from `.env.tpl` | — |
 | another 1Password account: a service account on its vault, read-only, its token in an item of the host's vault | 1Password admin console, once per account; `.env.<name>.tpl` references its items | — |
 | state bucket | `make bootstrap` | — |
-| OVH VPS: the order | OVH control panel | — |
+| OVH VPS: the order | `make apply`, or the OVH control panel and `service_name` | — |
 | OVH API credentials (`endpoint`, `application_key`, `application_secret`, `consumer_key`) | createtoken page, into a 1Password item `ovh-api` | — |
 | OVH: SSH off the public address | `make lockdown`, after `make pair` | in the install, once the token is there |
 | the service-account token onto the host, `/var/lib/orca/op-token` | `make secret` | — |

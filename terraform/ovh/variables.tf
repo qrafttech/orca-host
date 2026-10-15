@@ -4,8 +4,27 @@ variable "name" {
 }
 
 variable "service_name" {
-  description = "The VPS, as OVH names it: vps-xxxxxxxx.vps.ovh.net. Ordered beforehand, imported here."
+  description = "A VPS already ordered, as OVH names it: vps-xxxxxxxx.vps.ovh.net, imported. Empty: Terraform orders one."
   type        = string
+  default     = ""
+}
+
+variable "plan_code" {
+  description = "The VPS model ordered when `service_name` is empty, by its plan code in OVH's catalog (/order/catalog/public/vps)."
+  type        = string
+  default     = "vps-2027-model2"
+}
+
+variable "datacenter" {
+  description = "Where the VPS ordered runs: a `vps_datacenter` value of OVH's catalog (GRA, SBG, EU-WEST-RBX, EU-SOUTH-MIL...)."
+  type        = string
+  default     = "GRA"
+}
+
+variable "ovh_subsidiary" {
+  description = "The OVH entity the order is billed by."
+  type        = string
+  default     = "FR"
 }
 
 variable "state_bucket" {

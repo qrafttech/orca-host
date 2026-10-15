@@ -1,10 +1,12 @@
 # Copy to terraform/ovh/terraform.tfvars (gitignored), or keep it in your own repository and point TFVARS at it.
 # No secret.
 name           = "orca-host"
-service_name   = "vps-xxxxxxxx.vps.ovh.net"
 state_bucket   = "my-gcp-project-tfstate"
 op_vault       = "AI Agents"   # the 1Password vault the host reads, through its service account
 ssh_public_key = "ssh-ed25519 AAAA... me@laptop"
+# service_name = "vps-xxxxxxxx.vps.ovh.net"  # a VPS already ordered; without it, `make apply` orders one
+# plan_code    = "vps-2027-model2"
+# datacenter   = "GRA"
 # data_device  = "/dev/sdb"    # the additional disk, if ordered: /var/lib/orca survives a reinstall
 # image_name   = "Debian 13"
 # orca_image   = "ghcr.io/qrafttech/orca-host:main"

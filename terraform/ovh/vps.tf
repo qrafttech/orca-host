@@ -1,21 +1,34 @@
-# The VM: an OVH VPS, ordered beforehand, Debian installed by OVH's API with our script run at first boot.
-# Terraform does not order it (`import`) and never terminates it (`prevent_destroy`): what it manages is the install.
+# The VM: an OVH VPS, Debian installed by OVH's API with our script run at first boot.
+# No `service_name`: Terraform orders one (`plan_code`, `datacenter`), paid with the account's default payment
+# method. A `service_name`: the VPS already ordered, imported. Either way Terraform never terminates it
+# (`prevent_destroy`): that is done in the control panel, which OVH confirms by email.
 # Rebuild: `make rebuild` (apply -replace=terraform_data.install) — Debian is new, /var/lib/orca is kept on
 # the additional disk.
 import {
-  to = ovh_vps.vps
-  id = var.service_name
+  for_each = var.service_name == "" ? [] : [var.service_name]
+  to       = ovh_vps.vps
+  id       = each.value
 }
 
 resource "ovh_vps" "vps" {
-  display_name = var.name
-  # Order arguments, required by the schema, empty on an imported VPS: never sent.
-  ovh_subsidiary = "FR"
-  plan           = []
+  display_name         = var.name
+  ovh_subsidiary       = var.ovh_subsidiary
+  do_not_send_password = true
+  # The order. It installs `image_name` without our script; terraform_data.install reinstalls with it.
+  plan = [{
+    duration     = "P1M"
+    plan_code    = var.plan_code
+    pricing_mode = "default"
+    configuration = [
+      { label = "vps_datacenter", value = var.datacenter },
+      { label = "vps_os", value = var.image_name },
+    ]
+  }]
 
   lifecycle {
     prevent_destroy = true
-    ignore_changes  = [ovh_subsidiary, plan, plan_option, image_id, public_ssh_key, do_not_send_password]
+    # Order arguments: read at the order only, empty on an imported VPS.
+    ignore_changes = [ovh_subsidiary, plan, plan_option, image_id, public_ssh_key, do_not_send_password]
   }
 }
 
