@@ -31,15 +31,17 @@ host_tpl   = $(if $(filter $(ENV_TPL),$(1)),env.tpl,env.$(patsubst $(basename $(
 TF       = $(if $(filter ovh,$(PROVIDER)),$(TF_OVH),terraform -chdir=$(TF_DIR))
 # OVH's API credentials, items of 1Password: `op run` resolves the references into the environment of the tools
 # container, for Terraform's ovh provider and the ovhcloud CLI alike. The state is in GCS: application-default
-# credentials. TFVARS and the laptop's templates are mounted at their own paths, so TF_VARS reads the same inside.
+# credentials, or without them gcloud's access token for its active account. TFVARS and the laptop's templates
+# are mounted at their own paths, so TF_VARS reads the same inside.
 TOOLS     := orca-host-tools:dev
 OVH_ITEM  ?= op://$(OP_VAULT)/ovh-api
 ADC       ?= $(HOME)/.config/gcloud/application_default_credentials.json
-TF_OVH    = OVH_ENDPOINT="$(OVH_ITEM)/endpoint" OVH_APPLICATION_KEY="$(OVH_ITEM)/application_key" \
+GCS_AUTH  = $(if $(wildcard $(ADC)),-e GOOGLE_APPLICATION_CREDENTIALS=/adc.json -v $(ADC):/adc.json:ro,-e GOOGLE_OAUTH_ACCESS_TOKEN)
+TF_OVH    = $(if $(wildcard $(ADC)),,GOOGLE_OAUTH_ACCESS_TOKEN=$$(gcloud auth print-access-token)) OVH_ENDPOINT="$(OVH_ITEM)/endpoint" OVH_APPLICATION_KEY="$(OVH_ITEM)/application_key" \
 	    OVH_APPLICATION_SECRET="$(OVH_ITEM)/application_secret" OVH_CONSUMER_KEY="$(OVH_ITEM)/consumer_key" \
 	    op run -- docker run --rm -i -u $$(id -u):$$(id -g) -e HOME=/tmp \
 	      -e OVH_ENDPOINT -e OVH_APPLICATION_KEY -e OVH_APPLICATION_SECRET -e OVH_CONSUMER_KEY \
-	      -e GOOGLE_APPLICATION_CREDENTIALS=/adc.json -v $(ADC):/adc.json:ro \
+	      $(GCS_AUTH) \
 	      -v $(CURDIR):$(CURDIR) -v $(abspath $(TFVARS)):$(abspath $(TFVARS)):ro \
 	      $(foreach f,$(LOCAL_TPLS),-v $(abspath $(f)):$(abspath $(f)):ro) \
 	      -w $(CURDIR) $(TOOLS) -chdir=$(TF_DIR)
