@@ -100,10 +100,12 @@ PAIRING_URL = $(SSH) core@$(NAME) docker logs orca-host 2>/dev/null \
 # the tailnet when the host is on it, else the way in before it, since the host joins the tailnet with a key it
 # reads with this very token — IAP on GCP, the public address on OVH (looked up with stdin closed: it is the token).
 WRITE_TOKEN   = sudo sh -c 'umask 077; cat > /var/lib/orca/op-token.tmp && mv /var/lib/orca/op-token.tmp /var/lib/orca/op-token'
-BOOTSTRAP_SSH = $(if $(filter ovh,$(PROVIDER)),$(SSH) -o ConnectTimeout=10 core@$$($(TF) output -raw ipv4 </dev/null),\
+BOOTSTRAP_SSH = $(if $(filter ovh,$(PROVIDER)),$(SSH) -o ConnectTimeout=10 core@$$ip,\
 	          gcloud compute ssh $(NAME) --zone $(ZONE) --project $(PROJECT) --tunnel-through-iap --command)
 secret:             ## the service-account token, from 1Password, to the host
 	token=$$(op read "$(OP_TOKEN)" | tr -d '\r\n'); [ -n "$$token" ] || exit 1; \
+	$(if $(filter ovh,$(PROVIDER)),ip=$$($(TF) output -raw ipv4 </dev/null); \
+	  [ -n "$$ip" ] || { echo "no address for $(NAME): make init, make apply"; exit 1; };) \
 	printf '%s' "$$token" | $(SSH) -o ConnectTimeout=10 core@$(NAME) "$(WRITE_TOKEN)" \
 	  || printf '%s' "$$token" | $(BOOTSTRAP_SSH) "$(WRITE_TOKEN)"
 
