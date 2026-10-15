@@ -39,7 +39,7 @@ Not covered: a stack brought down without `-v` before its worktree is deleted le
 
 - `orca serve` from the official AppImage, extracted with `unsquashfs` at build time. No FUSE in a container, and the arm64 build runs under QEMU, where the kernel's binfmt rule refuses to execute an AppImage.
 - Claude Code as the native binary, checksum-verified against the release manifest. `DISABLE_AUTOUPDATER=1`: the image is the version.
-- `gh`, `git`, the Docker CLI with the compose plugin. `git` authenticates to GitHub through `gh` (a `credential.helper` in the image), so `GH_TOKEN` is the only GitHub credential: no SSH key, no `gh auth login`.
+- `gh`, `git`, the Docker CLI with the compose and buildx plugins. Buildx because without it compose falls back to the classic builder, which neither keeps a BuildKit cache nor labels the images it builds with their project, the label `prune-stacks` finds them by. `git` authenticates to GitHub through `gh` (a `credential.helper` in the image), so `GH_TOKEN` is the only GitHub credential: no SSH key, no `gh auth login`.
 - `op`, the 1Password CLI, the static binary from the official image. The host's secrets *are* 1Password items — the VM renders the env file with the same CLI, from its own image, before this one is pulled — so `op` is infrastructure here, like `gh`, not somebody's tool. What it can read is the env file's business, below.
 - `ruby`, `python3`, `node`: a project's Claude Code hooks run next to `claude`, not in the project's containers. The app's own runtime, at its own version, lives in those.
 - Versions are build args at the top of the `Dockerfile`. Orca is pinned to the desktop client's version (protocol compatibility). A bump is a PR that says why.
