@@ -77,7 +77,8 @@ resource "terraform_data" "install" {
       IMAGE   = var.image_name
       BODY = jsonencode({
         publicSshKey      = var.ssh_public_key
-        postInstallScript = local.first_boot
+        # Compressed: OVH answers a 500 to the script as it is, some 18 kB.
+        postInstallScript = "#!/bin/bash\necho '${base64gzip(local.first_boot)}' | base64 -d | gunzip | bash\n"
       })
     }
   }
