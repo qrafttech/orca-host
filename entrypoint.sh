@@ -58,7 +58,8 @@ if [ -n "${CLAUDE_SETTINGS_REPO:-}" ]; then
   fi
 fi
 
-# The stacks of deleted worktrees, torn down within 5 minutes, volumes included: see prune-stacks. Orca does not
+# The stacks of deleted worktrees, torn down within 5 minutes, volumes and built images included, and the build cache
+# capped: see prune-stacks. Orca does not
 # tell the host about a delete, so a loop, for as long as the container runs.
 (while :; do prune-stacks || true; sleep 300; done) &
 

@@ -85,7 +85,7 @@ In the app: Add a project → Clone from URL, the https URL, parent folder `/hom
 
 <img src="docs/orca-add-project.png" width="49%" alt="Add a project"> <img src="docs/orca-clone-from-url.png" width="49%" alt="Clone from URL">
 
-A project brings itself up from its worktree setup hook: `docker compose`, `.env` files — `op inject -i .env.tpl -o .env` works as is, against the host's vault; against another account's, `OP_SERVICE_ACCOUNT_TOKEN="$OP_SERVICE_ACCOUNT_TOKEN_<NAME>" op inject …`. What it starts is at `http://<tailnet IP>:<port>`. A deleted worktree's stack is torn down within 5 minutes, volumes included.
+A project brings itself up from its worktree setup hook: `docker compose`, `.env` files — `op inject -i .env.tpl -o .env` works as is, against the host's vault; against another account's, `OP_SERVICE_ACCOUNT_TOKEN="$OP_SERVICE_ACCOUNT_TOKEN_<NAME>" op inject …`. What it starts is at `http://<tailnet IP>:<port>`. A deleted worktree is cleaned up within 5 minutes: its stack, volumes and the images compose built included. The build cache is capped at 10 GB.
 
 ## Claude settings
 
@@ -153,7 +153,7 @@ make shell     # a shell in the container, as an Orca terminal sees it
 make ssh       # a shell on the VM
 ```
 
-The data disk fills with Docker: `docker system prune` from `make shell`.
+The data disk fills with live worktrees: `docker system df` from `make shell` says what takes it, `docker system prune` gives back an image built by hand.
 
 ## Develop
 
