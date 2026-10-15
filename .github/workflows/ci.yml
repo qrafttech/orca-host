@@ -55,7 +55,10 @@ jobs:
           # compose: gone, image included, once the server is up
           sudo install -d -o "$USER" /home/orca/ghost
           printf 'services:\n  s: {build: {context: ., dockerfile_inline: "FROM alpine:3.20\\nRUN touch /built"}, command: sleep infinity, stop_grace_period: 1s, volumes: [data:/data]}\nvolumes:\n  data:\n' > /home/orca/ghost/compose.yaml
-          docker compose -f /home/orca/ghost/compose.yaml up -d --build && sudo rm -rf /home/orca/ghost
+          # with the image's compose, as from an Orca terminal: it labels the images it builds with their project, which
+          # is how `down --rmi local` finds them with no compose file
+          docker run --rm --entrypoint docker -v /var/run/docker.sock:/var/run/docker.sock -v /home/orca:/home/orca ${{ env.IMAGE }}:smoke \
+            compose -f /home/orca/ghost/compose.yaml up -d --build && sudo rm -rf /home/orca/ghost
           # a worktree in Orca's trash, root-owned as a project's containers leave it, next to a directory that is not one
           trash=/home/orca/orca/workspaces/p/.orca-worktree-trash
           sudo install -d "$trash/wt-1-a/node_modules" "$trash/keep" && sudo touch "$trash/wt-1-a/node_modules/x"
