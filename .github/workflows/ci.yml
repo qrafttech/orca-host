@@ -15,7 +15,7 @@ jobs:
       - uses: hadolint/hadolint-action@v3.1.0
         with:
           dockerfile: Dockerfile
-      - run: shellcheck entrypoint.sh prune-stacks.sh empty-trash.sh inject-env.sh
+      - run: shellcheck entrypoint.sh prune-stacks.sh inject-env.sh
       - uses: hashicorp/setup-terraform@v3
       - run: terraform -chdir=terraform fmt -check -diff
       - run: terraform -chdir=terraform init -backend=false && terraform -chdir=terraform validate
@@ -49,7 +49,7 @@ jobs:
           tags: ${{ env.IMAGE }}:smoke
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      - name: smoke test — the ready contract, as upstream tests it, a deleted worktree's stack torn down, its trash emptied
+      - name: smoke test — the ready contract, as upstream tests it, and a deleted worktree's stack torn down
         run: |
           # a compose stack started from a directory under /home/orca that no longer exists, one of its images built by
           # compose: gone, image included, once the server is up
@@ -60,10 +60,7 @@ jobs:
           # is how `down --rmi local` finds them with no compose file
           docker run --rm --entrypoint docker -v /var/run/docker.sock:/var/run/docker.sock -v /home/orca:/home/orca ${{ env.IMAGE }}:smoke \
             compose -f /home/orca/ghost/compose.yaml up -d --build && sudo rm -rf /home/orca/ghost
-          # a worktree in Orca's trash, root-owned as a project's containers leave it, next to a directory that is not one
-          trash=/home/orca/orca/workspaces/p/.orca-worktree-trash
-          sudo install -d "$trash/wt-1-a/node_modules" "$trash/keep" && sudo touch "$trash/wt-1-a/node_modules/x"
-          docker run -d --name smoke -e PAIRING_ADDRESS=127.0.0.1 -v /var/run/docker.sock:/var/run/docker.sock -v /home/orca:/home/orca ${{ env.IMAGE }}:smoke
+          docker run -d --name smoke -e PAIRING_ADDRESS=127.0.0.1 -v /var/run/docker.sock:/var/run/docker.sock ${{ env.IMAGE }}:smoke
           for i in $(seq 1 24); do
             sleep 5
             if docker logs smoke 2>/dev/null | jq -Rr 'fromjson? | select(.type=="orca_server_ready" and .schemaVersion==1) | .type' | grep -q .; then
@@ -71,9 +68,6 @@ jobs:
               docker logs smoke 2>&1 | grep '^prune-stacks: ghost torn down'
               left=$(docker ps -a --filter label=com.docker.compose.project=ghost --format '{{.Names}}'; docker volume ls --filter label=com.docker.compose.project=ghost --format '{{.Name}}'; docker image ls -q ghost-s)
               [ -z "$left" ] || { echo "ghost stack left behind: $left"; exit 1; }
-              docker logs smoke 2>&1 | grep "^empty-trash: $trash/wt-1-a removed"
-              [ ! -e "$trash/wt-1-a" ] || { echo "trashed worktree left behind"; exit 1; }
-              [ -d "$trash/keep" ] || { echo "empty-trash removed what is not a worktree"; exit 1; }
               exit 0
             fi
           done

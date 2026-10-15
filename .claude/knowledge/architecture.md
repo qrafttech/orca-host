@@ -22,16 +22,16 @@ laptop / phone ──tailnet──▶ VM (Flatcar Container Linux, Ignition)
 | | Runs | Installed |
 |---|---|---|
 | The VM | Docker, two containers (`tailscale`, `orca-host`), and at every boot a transient `op` one that renders the env file | nothing else |
-| The `orca-host` container | `orca serve`, every Claude pane, every Orca terminal, a project's Claude Code hooks, `prune-stacks` and `empty-trash` every 5 minutes | `claude`, `gh`, `git`, the Docker CLI, `op`, `ruby`, `python3`, `node` |
+| The `orca-host` container | `orca serve`, every Claude pane, every Orca terminal, a project's Claude Code hooks, `prune-stacks` every 5 minutes | `claude`, `gh`, `git`, the Docker CLI, `op`, `ruby`, `python3`, `node` |
 | A project's containers | the app, its database, its cache: a worktree's stack | the app's runtime, at its version, from the project's compose |
 
 Beside, not inside: the `orca-host` container has the VM's Docker socket, so a `docker compose up` from an Orca terminal creates the project's containers on the VM's Docker, as siblings of `orca-host`. Same path everywhere: on the VM, `/home/orca` is a symlink to `/var/lib/orca/home`, which the container mounts at `/home/orca`, so a project's `./:/app` bind mount names the same files on both sides.
 
-**Deleted worktrees.** Orca deletes a worktree without telling the host, and what the worktree put on the data disk stays behind: its stack (containers running, volumes kept), the images compose built for it, their layers in the build cache, and often the worktree itself. Three sweeps, every 5 minutes, in the `orca-host` container, so a fix is an image change and a `make restart`, not a rebuild:
+**Deleted worktrees.** Orca deletes a worktree without telling the host, and what the worktree put on the data disk stays behind: its stack (containers running, volumes kept), the images compose built for it, their layers in the build cache. One sweep, every 5 minutes, in the `orca-host` container, so a fix is an image change and a `make restart`, not a rebuild:
 
 - `prune-stacks`, as `orca`. Every container compose starts carries two labels, its project and the directory it was started from; every project whose directory is under `/home/orca` and no longer exists is taken down with `docker compose -p <name> down -v --rmi local`, which acts on the labels and needs no compose file. `--rmi local` removes the images compose built for the stack, those with no `image:` name, found by the project label compose puts on them; a pulled `postgres` stays. One log line per stack torn down. Directories elsewhere (a laptop's stacks, the host's own `/opt/orca`) are out of reach.
 - Then, in the same pass, the build cache is capped at 10 GB (`docker builder prune --max-used-space`, `BUILD_CACHE_MAX`), least recently used first: a removed image's layers are BuildKit's cache as well, and give back little until the cache goes too. What is reused stays; a worktree deleted days ago goes first. The daemon's own GC (`builder.gc` in `daemon.json`) would do the same, but from Ignition, so a rebuild for each change.
-- `empty-trash`, as root, from the entrypoint's root phase. Orca moves a deleted worktree to `.orca-worktree-trash/wt-<timestamp>-<id>` next to the project's worktrees, then removes it, which fails on any file `orca` does not own: a project whose containers run as root writes root-owned `node_modules` and caches through the bind mount. Whatever Orca put in the trash it meant to delete, so every `wt-*` in an `.orca-worktree-trash` within four levels of `/home/orca` is removed, whoever owns it, and nothing else. One log line per worktree. By then the archive hook has run and the worktree's processes are killed. The cause is the project's: `user:` in its compose file, or `node_modules` and caches in named volumes.
+- Nothing for the worktree itself. Orca moves a deleted worktree to `.orca-worktree-trash/wt-<timestamp>-<id>` next to the project's worktrees, then removes it, as `orca`. That fails on any file `orca` does not own, and the whole worktree stays in the trash: a project's containers must not write into the bind-mounted worktree as root (`user:` in its compose file, uid 1000, or `node_modules` and caches in named volumes). The host does not sweep it as root: the fix is the project's, and a root loop would only hide it.
 
 Not covered: a stack brought down without `-v` before its worktree is deleted leaves no container to name the directory, so its volumes and images stay; that case is the project's archive script. Images outside any stack (one built by hand from a terminal) are not touched either.
 
@@ -51,7 +51,7 @@ The entrypoint starts as root, gives `orca` the Docker socket's group and its ho
 
 1. Seeds `~/.claude.json` with Claude Code's first-run answers (onboarding, theme, bypass-permissions acceptance). Merged at every start: Claude rewrites the file.
 2. Applies the Claude preferences, see [claude-settings.md](claude-settings.md).
-3. Starts the `prune-stacks` loop in the background, every 5 minutes, for as long as the container runs. The `empty-trash` loop is started earlier, as root, before the switch to `orca`.
+3. Starts the `prune-stacks` loop in the background, every 5 minutes, for as long as the container runs.
 4. Waits for `tailscale0`, unless `PAIRING_ADDRESS` is given.
 5. `exec orca serve --port 6768 --pairing-address <IP> [--mobile-pairing] --json`.
 
@@ -71,7 +71,7 @@ The cost is a rebuild for a new tool instead of a restart, and a derived image g
 
 ### CI
 
-`.github/workflows/ci.yml`, on every push: lint (hadolint, shellcheck, `terraform fmt` and `validate`), build amd64, smoke-test the ready contract (an `orca_server_ready` line with `schemaVersion: 1`, then `docker version` from inside the container) `prune-stacks` (a compose stack started from a `/home/orca` directory that no longer exists, one image built by compose, is gone by the time the server is ready, image included) and `empty-trash` (a root-owned `wt-*` in an `.orca-worktree-trash` is gone, a directory beside it is not), then push the multi-arch image as `<branch>` and `sha-<sha>`. The `main` tag moves; a host pinned to a build names the sha tag, or a digest, in `orca_image`. Those tags are also the contract of a derived image: its `FROM` names one of them.
+`.github/workflows/ci.yml`, on every push: lint (hadolint, shellcheck, `terraform fmt` and `validate`), build amd64, smoke-test the ready contract (an `orca_server_ready` line with `schemaVersion: 1`, then `docker version` from inside the container) and `prune-stacks` (a compose stack started from a `/home/orca` directory that no longer exists, one image built by compose, is gone by the time the server is ready, image included), then push the multi-arch image as `<branch>` and `sha-<sha>`. The `main` tag moves; a host pinned to a build names the sha tag, or a digest, in `orca_image`. Those tags are also the contract of a derived image: its `FROM` names one of them.
 
 ## The stack
 
