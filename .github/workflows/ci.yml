@@ -54,7 +54,8 @@ jobs:
           # a compose stack started from a directory under /home/orca that no longer exists, one of its images built by
           # compose: gone, image included, once the server is up
           sudo install -d -o "$USER" /home/orca/ghost
-          printf 'services:\n  s: {build: {context: ., dockerfile_inline: "FROM alpine:3.20\\nRUN touch /built"}, command: sleep infinity, stop_grace_period: 1s, volumes: [data:/data]}\nvolumes:\n  data:\n' > /home/orca/ghost/compose.yaml
+          printf 'FROM alpine:3.20\nRUN touch /built\n' > /home/orca/ghost/Dockerfile
+          printf 'services:\n  s: {build: ., command: sleep infinity, stop_grace_period: 1s, volumes: [data:/data]}\nvolumes:\n  data:\n' > /home/orca/ghost/compose.yaml
           # with the image's compose, as from an Orca terminal: it labels the images it builds with their project, which
           # is how `down --rmi local` finds them with no compose file
           docker run --rm --entrypoint docker -v /var/run/docker.sock:/var/run/docker.sock -v /home/orca:/home/orca ${{ env.IMAGE }}:smoke \
