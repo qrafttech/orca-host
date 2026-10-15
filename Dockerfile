@@ -49,7 +49,7 @@ RUN curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_$
     | tar -xz -C /tmp \
  && install -m 755 "/tmp/gh_${GH_VERSION}_linux_${TARGETARCH}/bin/gh" /usr/local/bin/gh
 
-# --- docker CLI + compose and buildx plugins, static binaries from the official image ------------------------
+# --- docker CLI + compose and buildx plugins, static binaries from the official image -------------------------
 FROM docker:${DOCKER_VERSION}-cli AS docker-cli
 
 # --- op: the 1Password CLI, the static binary from the official image -----------------------------------------
