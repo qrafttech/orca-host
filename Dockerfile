@@ -91,5 +91,6 @@ ENV DISABLE_AUTOUPDATER=1 \
     GIT_CONFIG_VALUE_0="!gh auth git-credential"
 
 COPY prune-stacks.sh /usr/local/bin/prune-stacks
+COPY empty-trash.sh /usr/local/bin/empty-trash
 COPY entrypoint.sh /usr/local/bin/entrypoint
 ENTRYPOINT ["/usr/local/bin/entrypoint"]

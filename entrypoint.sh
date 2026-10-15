@@ -16,6 +16,9 @@ if [ "$(id -u)" = 0 ]; then
   fi
   # /home/orca is a volume: empty and root-owned the first time
   [ "$(stat -c %u /home/orca)" = "$(id -u orca)" ] || chown orca:orca /home/orca
+  # Orca's worktree trash, emptied every 5 minutes: see empty-trash. Root, because what Orca could not remove is
+  # what `orca` does not own. Started before the exec, it runs for as long as the container does.
+  (while :; do empty-trash || true; sleep 300; done) &
   exec runuser -u orca --preserve-environment -- "$0" "$@"
 fi
 
@@ -58,7 +61,8 @@ if [ -n "${CLAUDE_SETTINGS_REPO:-}" ]; then
   fi
 fi
 
-# The stacks of deleted worktrees, torn down within 5 minutes, volumes included: see prune-stacks. Orca does not
+# The stacks of deleted worktrees, torn down within 5 minutes, volumes and built images included, and the build cache
+# capped: see prune-stacks. Orca does not
 # tell the host about a delete, so a loop, for as long as the container runs.
 (while :; do prune-stacks || true; sleep 300; done) &
 
