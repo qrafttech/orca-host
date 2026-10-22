@@ -88,7 +88,7 @@ Stopping the stack ends live terminals, as a service restart does.
 
 ## The host
 
-One person, one `terraform apply`, one state, in a bucket of the person's own GCP project: `make bootstrap` creates it, `make init` points Terraform at it, one prefix per host. Bucket and prefix are given at init (`-backend-config`), not by the root's directory: a root moved in the tree finds its state again with a `make init`. Terraform authenticates with Application Default Credentials, separate from `gcloud auth login`.
+One person, one `terraform apply`, one state, in a bucket of the person's own GCP project: `make bootstrap` creates it, `make init` points Terraform at it, one prefix per host, and `plan`, `apply` and `rebuild` run it first, so they act on the state of the host `TFVARS` names. Bucket and prefix are given at init (`-backend-config`), not by the root's directory: a root moved in the tree finds its state again with a `make init`. Terraform authenticates with Application Default Credentials, separate from `gcloud auth login`.
 
 The VM is Debian 13. `host/first-boot.sh.tftpl`, rendered by Terraform from `compose.yaml` and the files under `host/`, is everything the VM is: GCP runs it as the instance's `startup-script`, at every boot, and it stops at its first lines when the hash of the script it last applied, kept on the boot disk, is its own; OVH runs it once after a reinstall. Idempotent either way:
 
