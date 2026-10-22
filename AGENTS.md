@@ -19,7 +19,7 @@ A VM that runs `orca serve` headless, one host per person, all of that person's 
 
 | File | Covers |
 |---|---|
-| [architecture.md](.claude/knowledge/architecture.md) | where things run, image and derived images, entrypoint, CI, stack, VM and its first-boot script, network, disks, sizing and cost, restart vs rebuild, pairing, GitHub token, workspace trust |
+| [architecture.md](.claude/knowledge/architecture.md) | what runs where, the image and your own image, CI, the stack, the host (state, first-boot script, disks), secrets, deleted worktrees, Google Cloud, OVH, how a change reaches the host, pairing, GitHub token |
 | [claude-settings.md](.claude/knowledge/claude-settings.md) | `CLAUDE_PERMISSION_MODE`, the settings repository, `config/mcp.json` |
 
 ## Setup steps: script or by hand
