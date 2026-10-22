@@ -55,7 +55,7 @@ SSH     := ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o Lo
 # What `make up` runs, the same variable a host uses: `make build`'s output by default, any reference on request.
 ORCA_IMAGE ?= orca-host:dev
 
-.PHONY: build up down tools secret bootstrap init plan apply rebuild lockdown pair pair-desktop pair-mobile restart logs shell ssh
+.PHONY: build up down tools secret bootstrap init plan apply rebuild lockdown destroy pair pair-desktop pair-mobile restart logs shell ssh
 # A failed `op inject` (locked vault, missing item) must not leave an empty file that Make then takes as up to date.
 .DELETE_ON_ERROR:
 
@@ -135,6 +135,26 @@ ifeq ($(PROVIDER),ovh)
 	$(SSH) core@$(NAME) 'sudo touch /var/lib/orca/lockdown && sudo /opt/orca/firewall'
 else
 	@echo "a GCP host has no public SSH: nothing to close"
+endif
+
+# The data disk is `prevent_destroy`, so no plan deletes it by accident: it leaves the state first, and gcloud deletes
+# it, then its snapshots. Asks once, for the host's name; every step after skips what is already gone, so a destroy
+# stopped halfway is run again. The tailnet node is logged out when the host answers, else removed in the Tailscale
+# admin console. The state stays, empty: `make apply` brings up a new host under the same name.
+destroy:            ## GCP: the host for good, its data disk and snapshots included. Asks for its name.
+ifeq ($(PROVIDER),ovh)
+	@echo "an OVH VPS is terminated in the OVH control panel"; exit 1
+else
+	@read -p "type $(NAME) to delete it, its data disk and its snapshots: " n; [ "$$n" = "$(NAME)" ]
+	-$(SSH) -o ConnectTimeout=10 core@$(NAME) 'sudo docker exec tailscale tailscale logout'
+	if $(TF) state list | grep -qx google_compute_region_disk.data; then \
+	  $(TF) state rm google_compute_region_disk.data; fi
+	$(TF) destroy $(TF_VARS) -auto-approve
+	if gcloud compute disks describe $(NAME)-data --region $(REGION) --project $(PROJECT) >/dev/null 2>&1; then \
+	  gcloud compute disks delete $(NAME)-data --region $(REGION) --project $(PROJECT) --quiet; fi
+	s=$$(gcloud compute snapshots list --project $(PROJECT) --format='value(name)' \
+	  --filter='sourceDisk~/regions/$(REGION)/disks/$(NAME)-data$$'); \
+	[ -z "$$s" ] || gcloud compute snapshots delete $$s --project $(PROJECT) --quiet
 endif
 
 pair: pair-desktop pair-mobile  ## the desktop client, then the phone, then the server back to its desktop link

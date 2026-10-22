@@ -151,6 +151,7 @@ make restart   # take changes now; ends live terminals
 make logs
 make shell     # a shell in the container, as an Orca terminal sees it
 make ssh       # a shell on the VM
+make destroy   # GCP: the host for good, its data disk and snapshots included; asks for its name
 ```
 
 The data disk fills with live worktrees: `docker system df` from `make shell` says what takes it, `docker system prune` gives back an image built by hand.

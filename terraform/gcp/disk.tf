@@ -8,6 +8,7 @@ resource "google_compute_region_disk" "data" {
   size          = var.data_disk_gb
 
   lifecycle {
+    # `make destroy` takes it out of the state first, then deletes it with gcloud.
     prevent_destroy = true
     # A disk restored from a snapshot (a recovery, a migration) is imported as it is: where it came from is history.
     ignore_changes = [snapshot]

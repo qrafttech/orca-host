@@ -44,3 +44,4 @@ A VM that runs `orca serve` headless, one host per person, all of that person's 
 | mobile pairing | `make pair`, QR on the laptop | from the desktop client |
 | first clone of a project | the app, Clone from URL | — |
 | Claude Code workspace trust | first Claude pane of a project, once, covers its worktrees — as on a laptop | — |
+| deleting a host | `make destroy` on GCP; on OVH, the control panel, confirmed by email | — |
