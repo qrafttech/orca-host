@@ -6,7 +6,7 @@ Your own [Orca](https://github.com/stablyai/orca) server in the cloud. It runs o
 
 ## Install
 
-You need these on your laptop: `gcloud`, `op` (the 1Password CLI), `jq`, `ssh`, `qrencode` and the Orca desktop CLI. Add `terraform` for a Google Cloud host, or `docker` for an OVH one (Terraform and the OVH CLI then run in a container on your laptop).
+You need these on your laptop: `terraform`, `gcloud`, `op` (the 1Password CLI), `jq`, `ssh`, `qrencode` and the Orca desktop CLI, plus the [OVH CLI](https://github.com/ovh/ovhcloud-cli) (`ovhcloud`) for an OVH host.
 
 1. **Tailscale** (once per tailnet). In the admin console, go to Access controls → Tags and create a tag called `orca-host`, owned by `autogroup:admin`.
 2. **1Password** (once). Create a vault for the host. Put in it the tokens your agents need, and no passwords. Then create a read-only service account on that vault, and save its token in the same vault, in an item called `orca-host-op-token`.
@@ -121,4 +121,6 @@ Then set `orca_image = "ghcr.io/me/orca-host:main"` in your tfvars and run `make
 
 ## Develop
 
-Every push builds the image, tagged `<branch>` and `sha-<sha>`. To try it on a Mac, run `make build`, then `make up`: it runs with Docker Desktop, on your laptop's tailnet IP.
+Every push builds the image, tagged `<branch>` and `sha-<sha>`.
+
+To try a change on your Mac, you also need Docker Desktop. Run `make build`, then `make up`: the host runs on your laptop, on its tailnet IP.

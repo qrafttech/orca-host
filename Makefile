@@ -1,7 +1,6 @@
-# orca-host, laptop side. Needs: gcloud, op (1Password CLI), jq, ssh, qrencode, the Orca desktop CLI; terraform for a GCP host,
-# docker for an OVH one (and for build, up, env).
-# PROVIDER: gcp, the default, or ovh (an OVH VPS); the Terraform root is terraform/$(PROVIDER)/. On ovh, Terraform and the ovhcloud
-# CLI run from the image `make tools` builds: Docker, op and gcloud's application-default credentials are enough.
+# orca-host, laptop side. Needs: terraform, gcloud, op (1Password CLI), jq, ssh, qrencode, the Orca desktop CLI; the
+# ovhcloud CLI for an OVH host; docker to develop (build, up, env).
+# PROVIDER: gcp, the default, or ovh (an OVH VPS); the Terraform root is terraform/$(PROVIDER)/.
 # Two per-person files, plain configuration, versioned wherever you keep your host (the repository of your own image
 # is the natural place) or kept here, gitignored: TFVARS, the host's name, project, zone, SSH key; ENV_TPL, the
 # variables the host starts with, `VAR=value` per line, a secret as a `{{ op://Vault/Item/field }}` reference.
@@ -29,23 +28,15 @@ OP_TOKEN ?= op://$(OP_VAULT)/orca-host-op-token/credential
 # The templates on this laptop: ENV_TPL and the .env.<name>.tpl next to it, and the name each takes on the host.
 LOCAL_TPLS = $(wildcard $(ENV_TPL) $(basename $(ENV_TPL)).*.tpl)
 host_tpl   = $(if $(filter $(ENV_TPL),$(1)),env.tpl,env.$(patsubst $(basename $(ENV_TPL)).%.tpl,%,$(1)).tpl)
-TF       = $(if $(filter ovh,$(PROVIDER)),$(TF_OVH),terraform -chdir=$(TF_DIR))
-# OVH's API credentials, items of 1Password: `op run` resolves the references into the environment of the tools
-# container, for Terraform's ovh provider and the ovhcloud CLI alike. The state is in GCS: application-default
-# credentials, or without them gcloud's access token for its active account. TFVARS and the laptop's templates
-# are mounted at their own paths, so TF_VARS reads the same inside.
-TOOLS     := orca-host-tools:dev
-OVH_ITEM  ?= op://$(OP_VAULT)/ovh-api
-ADC       ?= $(HOME)/.config/gcloud/application_default_credentials.json
-GCS_AUTH  = $(if $(wildcard $(ADC)),-e GOOGLE_APPLICATION_CREDENTIALS=/adc.json -v $(ADC):/adc.json:ro,-e GOOGLE_OAUTH_ACCESS_TOKEN)
-TF_OVH    = $(if $(wildcard $(ADC)),,GOOGLE_OAUTH_ACCESS_TOKEN=$$(gcloud auth print-access-token)) OVH_ENDPOINT="$(OVH_ITEM)/endpoint" OVH_APPLICATION_KEY="$(OVH_ITEM)/application_key" \
-	    OVH_APPLICATION_SECRET="$(OVH_ITEM)/application_secret" OVH_CONSUMER_KEY="$(OVH_ITEM)/consumer_key" \
-	    op run -- docker run --rm -i -u $$(id -u):$$(id -g) -e HOME=/tmp \
-	      -e OVH_ENDPOINT -e OVH_APPLICATION_KEY -e OVH_APPLICATION_SECRET -e OVH_CONSUMER_KEY \
-	      $(GCS_AUTH) \
-	      -v $(CURDIR):$(CURDIR) -v $(abspath $(TFVARS)):$(abspath $(TFVARS)):ro \
-	      $(foreach f,$(LOCAL_TPLS),-v $(abspath $(f)):$(abspath $(f)):ro) \
-	      -w $(CURDIR) $(TOOLS) -chdir=$(TF_DIR)
+# Terraform runs on the laptop, for both providers. Its state is in GCS: application-default credentials, or without
+# them gcloud's access token for its active account. On ovh, `op run` puts OVH's API credentials, an item of 1Password,
+# in its environment, for the ovh provider and the ovhcloud CLI the install calls alike.
+ADC      ?= $(HOME)/.config/gcloud/application_default_credentials.json
+OVH_ITEM ?= op://$(OP_VAULT)/ovh-api
+TF        = $(if $(wildcard $(ADC)),,GOOGLE_OAUTH_ACCESS_TOKEN=$$(gcloud auth print-access-token)) \
+	    $(if $(filter ovh,$(PROVIDER)),OVH_ENDPOINT="$(OVH_ITEM)/endpoint" OVH_APPLICATION_KEY="$(OVH_ITEM)/application_key" \
+	      OVH_APPLICATION_SECRET="$(OVH_ITEM)/application_secret" OVH_CONSUMER_KEY="$(OVH_ITEM)/consumer_key" op run --) \
+	    terraform -chdir=$(TF_DIR)
 REPLACE   = $(if $(filter ovh,$(PROVIDER)),terraform_data.install,google_compute_instance.vm)
 # TFVARS by path, wherever it is; the laptop's templates when there are any, their content goes into the first-boot
 # script
@@ -56,7 +47,7 @@ SSH     := ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o Lo
 # What `make up` runs, the same variable a host uses: `make build`'s output by default, any reference on request.
 ORCA_IMAGE ?= orca-host:dev
 
-.PHONY: build up down tools secret bootstrap init plan apply rebuild lockdown destroy pair pair-desktop pair-mobile restart logs shell ssh
+.PHONY: build up down secret bootstrap init plan apply rebuild lockdown destroy pair pair-desktop pair-mobile restart logs shell ssh
 # A failed `op inject` (locked vault, missing item) must not leave an empty file that Make then takes as up to date.
 .DELETE_ON_ERROR:
 
@@ -88,10 +79,6 @@ down:
 
 ## host, on GCP or OVH
 secret bootstrap init plan apply rebuild lockdown pair-desktop pair-mobile restart logs shell ssh: $(TFVARS)
-init plan apply rebuild secret: $(if $(filter ovh,$(PROVIDER)),tools)
-
-tools:              ## the image Terraform and the ovhcloud CLI run from, for an OVH host
-	docker build -q -t $(TOOLS) tools
 # the pairing URL of the running server, from the last orca_server_ready line of its logs; empty until it is up
 PAIRING_URL = $(SSH) core@$(NAME) docker logs orca-host 2>/dev/null \
 	  | jq -Rr 'fromjson? | select(.type=="orca_server_ready") | .pairing.url' | tail -1

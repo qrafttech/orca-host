@@ -15,9 +15,6 @@ jobs:
       - uses: hadolint/hadolint-action@v3.1.0
         with:
           dockerfile: Dockerfile
-      - uses: hadolint/hadolint-action@v3.1.0
-        with:
-          dockerfile: tools/Dockerfile
       - run: shellcheck entrypoint.sh prune-stacks.sh inject-env.sh && shellcheck -s sh host/render-env host/up host/firewall
       - uses: hashicorp/setup-terraform@v3
       - run: terraform fmt -check -diff -recursive terraform && terraform fmt -check -diff -recursive test
