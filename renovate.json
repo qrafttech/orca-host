@@ -29,6 +29,28 @@
       "description": "The image's op and the VM's op move together",
       "matchPackageNames": ["1password/op"],
       "groupName": "1password op"
+    },
+    {
+      "description": "Every minor and patch release in one pull request",
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "non-major"
+    },
+    {
+      "description": "Every GitHub Actions release in one pull request",
+      "matchManagers": ["github-actions"],
+      "groupName": "GitHub Actions",
+      "separateMajorMinor": false
+    },
+    {
+      "description": "Orca alone: the mobile app refuses a host behind it, its bump must not wait on another",
+      "matchPackageNames": ["stablyai/orca"],
+      "groupName": "Orca"
+    },
+    {
+      "description": "A new Debian release renames packages the image installs: a pull request by hand",
+      "matchPackageNames": ["debian"],
+      "matchUpdateTypes": ["major"],
+      "enabled": false
     }
   ]
 }
