@@ -140,8 +140,9 @@ endif
 # The host is the one TFVARS names, its state too: init again against its prefix, whatever the last `make init` was.
 # The data disk is `prevent_destroy`, so no plan deletes it by accident: it leaves the state first, and gcloud deletes
 # it, then its snapshots. Asks once, for the host's name; every step after skips what is already gone, so a destroy
-# stopped halfway is run again. The tailnet node is logged out when the host answers, else removed in the Tailscale
-# admin console. The state stays, empty: `make apply` brings up a new host under the same name.
+# stopped halfway is run again. A gcloud that fails, a reauthentication refused, stops it: never read as gone. The
+# tailnet node is logged out when the host answers, else removed in the Tailscale admin console. The state stays,
+# empty: `make apply` brings up a new host under the same name.
 destroy:            ## GCP: the host for good, its data disk and snapshots included. Asks for its name.
 ifeq ($(PROVIDER),ovh)
 	@echo "an OVH VPS is terminated in the OVH control panel"; exit 1
@@ -153,11 +154,12 @@ else
 	if $(TF) state list | grep -qx google_compute_region_disk.data; then \
 	  $(TF) state rm google_compute_region_disk.data; fi
 	$(TF) destroy $(TF_VARS) -auto-approve
-	if gcloud compute disks describe $(NAME)-data --region $(REGION) --project $(PROJECT) >/dev/null 2>&1; then \
-	  gcloud compute disks delete $(NAME)-data --region $(REGION) --project $(PROJECT) --quiet; fi
+	d=$$(gcloud compute disks list --project $(PROJECT) --format='value(name)' \
+	  --filter='name=$(NAME)-data AND region~/$(REGION)$$') && \
+	{ [ -z "$$d" ] || gcloud compute disks delete $(NAME)-data --region $(REGION) --project $(PROJECT) --quiet; }
 	s=$$(gcloud compute snapshots list --project $(PROJECT) --format='value(name)' \
-	  --filter='sourceDisk~/regions/$(REGION)/disks/$(NAME)-data$$'); \
-	[ -z "$$s" ] || gcloud compute snapshots delete $$s --project $(PROJECT) --quiet
+	  --filter='sourceDisk~/regions/$(REGION)/disks/$(NAME)-data$$') && \
+	{ [ -z "$$s" ] || gcloud compute snapshots delete $$s --project $(PROJECT) --quiet; }
 endif
 
 pair: pair-desktop pair-mobile  ## the desktop client, then the phone, then the server back to its desktop link
