@@ -143,14 +143,15 @@ endif
 # The data disk is `prevent_destroy`, so no plan deletes it by accident: it leaves the state first, and gcloud deletes
 # it, then its snapshots. Asks once, for the host's name; every step after skips what is already gone, so a destroy
 # stopped halfway is run again. A gcloud that fails, a reauthentication refused, stops it: never read as gone. The
-# tailnet node is logged out when the host answers, else removed in the Tailscale admin console. The state stays,
-# empty: `make apply` brings up a new host under the same name.
-destroy:            ## GCP: the host for good, its data disk and snapshots included. Asks for its name.
+# tailnet node is logged out when the host answers, else removed in the Tailscale admin console. Last, the host's
+# state, its old versions included; the empty-name check above keeps that to one host's prefix. `make init` starts a
+# new state, for a new host under the same name.
+destroy:            ## GCP: the host for good, its data disk, snapshots and state included. Asks for its name.
 ifeq ($(PROVIDER),ovh)
 	@echo "an OVH VPS is terminated in the OVH control panel"; exit 1
 else
 	@[ -n "$(NAME)" ] || { echo "no name in $(TFVARS): TFVARS names the host's file"; exit 1; }
-	@read -p "type $(NAME) to delete it ($(PROJECT), $(ZONE)), its data disk and its snapshots: " n; [ "$$n" = "$(NAME)" ]
+	@read -p "type $(NAME) to delete it ($(PROJECT), $(ZONE)), its data disk, its snapshots and its state: " n; [ "$$n" = "$(NAME)" ]
 	$(TF) init -reconfigure -backend-config=bucket=$(BUCKET) -backend-config=prefix=orca-host/$(NAME) >/dev/null
 	-$(SSH) -o ConnectTimeout=10 core@$(NAME) 'sudo docker exec tailscale tailscale logout'
 	if $(TF) state list | grep -qx google_compute_region_disk.data; then \
@@ -162,6 +163,8 @@ else
 	s=$$(gcloud compute snapshots list --project $(PROJECT) --format='value(name)' \
 	  --filter='sourceDisk~/regions/$(REGION)/disks/$(NAME)-data$$') && \
 	{ [ -z "$$s" ] || gcloud compute snapshots delete $$s --project $(PROJECT) --quiet; }
+	o=$$(gcloud storage objects list 'gs://$(BUCKET)/orca-host/$(NAME)/**' --format='value(name)') && \
+	{ [ -z "$$o" ] || gcloud storage rm -r --all-versions gs://$(BUCKET)/orca-host/$(NAME)/; }
 endif
 
 pair: pair-desktop pair-mobile  ## the desktop client, then the phone, then the server back to its desktop link
