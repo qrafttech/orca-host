@@ -1,131 +1,103 @@
 # Architecture
 
-Three layers, each usable without the one above: an **image** that runs on any Docker host, a **stack** (`compose.yaml`) that runs on any Linux Docker host with `/dev/net/tun`, and a **host**: a Debian VM that Terraform brings up and one script, `host/first-boot.sh.tftpl`, turns into a machine running the stack. The script is the same on every provider; only the Terraform root differs, `terraform/gcp/` or `terraform/ovh/`, picked by `PROVIDER`.
+A host is three layers, each usable without the one above it:
+
+1. **The image**: Orca, Claude Code and the tools a session needs. Runs on any Docker host.
+2. **The stack**, `compose.yaml`: the image plus Tailscale. Runs on any Linux Docker host with `/dev/net/tun`.
+3. **The VM**: Debian, brought up by Terraform and turned into a machine running the stack by one script, `host/first-boot.sh.tftpl`. The script is the same on every provider; only the Terraform root differs, `terraform/gcp/` or `terraform/ovh/`.
 
 ```
-laptop / phone ──tailnet──▶ VM (Debian, host/first-boot.sh.tftpl)
-                             ├─ data disk  /var/lib/orca, kept across rebuilds
+laptop / phone ──tailnet──▶ VM (Debian)
+                             ├─ data disk /var/lib/orca, kept across rebuilds
                              │    home/       /home/orca: checkouts, ~/.claude, Orca state
                              │    tailscale/  the node identity: same tailnet IP after a rebuild
                              │    docker/     Docker's data root: images, build cache, project volumes
                              │    env         the env file, rendered from .env.tpl and 1Password
                              │    op-token    the 1Password service-account token
-                             └─ compose.yaml
+                             └─ the stack
                                   ├─ tailscale   host network, /dev/net/tun
                                   └─ orca-host   host network, `orca serve`, the VM's Docker socket
+                                       └─ project stacks, started from Orca terminals, run next to it on the VM's Docker
 ```
 
-## What runs where
+## 1. The image
 
-| | Runs | Installed |
-|---|---|---|
-| The VM | Docker, the `tailscale` and `orca-host` containers, and at each boot a short-lived `op` container that renders the env file | nothing else |
-| The `orca-host` container | `orca serve`, every Claude pane and Orca terminal, a project's Claude Code hooks, the worktree sweep | `claude`, `gh`, `git`, the Docker CLI, `op`, `ruby`, `python3`, `node` |
-| A project's containers | the app, its database, its cache | the app's own runtime, from the project's compose file |
+| Tool | Why it's there |
+|---|---|
+| `orca serve` | the server; unpacked from Orca's AppImage at build time (no FUSE in a container). Follows Orca's latest release: the apps update themselves and refuse an older server |
+| `claude` | the native binary, checksum-verified, auto-updater off: the image is the version |
+| `gh`, `git` | `git` authenticates through `gh`, so `GH_TOKEN` is the only GitHub credential |
+| Docker CLI, compose, buildx | a project's stack runs on the VM's Docker; buildx so compose labels the images it builds, which the worktree sweep relies on |
+| `op` | the host's secrets are 1Password items |
+| `ruby`, `python3`, `node` | a project's Claude Code hooks run next to `claude`, not in the project's containers |
 
-`orca-host` has the VM's Docker socket, so a `docker compose up` from an Orca terminal starts the project's containers on the VM, next to `orca-host` rather than inside it. `/home/orca` is the same path on both sides (a symlink to `/var/lib/orca/home` on the VM, a bind mount in the container), so a project's `./:/app` bind mount points at the same files.
+Versions are build args at the top of the `Dockerfile`, bumped by Renovate in three pull requests: Orca alone, other minor and patch releases, GitHub Actions. A new Debian major is done by hand, since it renames packages.
 
-## The image
+At start, the entrypoint gives `orca` the Docker socket and its home, then, as `orca`: seeds Claude's first-run answers, applies the [Claude settings](claude-settings.md), starts the worktree sweep, waits for `tailscale0`, and runs `orca serve`.
 
-- **Orca**: `orca serve` from the official AppImage, unpacked at build time (no FUSE in a container, and QEMU cannot run an AppImage for the arm64 build). It follows Orca's latest release: the apps update themselves, and the mobile app refuses a server older than its protocol.
-- **Claude Code**: the native binary, checksum-verified. The auto-updater is off: the image is the version.
-- **`gh`, `git`, the Docker CLI** with compose and buildx. Without buildx, compose falls back to the classic builder, which keeps no cache and doesn't label images with their project, the label the worktree sweep relies on. `git` authenticates through `gh`, so `GH_TOKEN` is the only GitHub credential.
-- **`op`**, the 1Password CLI: the host's secrets are 1Password items, so it is infrastructure, like `gh`.
-- **`ruby`, `python3`, `node`**, for a project's Claude Code hooks, which run next to `claude` and not in the project's containers.
-
-Versions are build args at the top of the `Dockerfile`, bumped by Renovate in three pull requests: Orca alone, so its bump never waits on another; every other minor and patch release; every GitHub Actions release. A new Debian major is a pull request by hand, since it renames packages the image installs. Orca, Claude Code and `gh` come from download URLs, so a `# renovate:` comment above their `ARG` says where their releases are published. Nothing else is in the image: a person's own tools go in their own image.
-
-At start, the entrypoint gives `orca` the Docker socket's group and its home, then, as `orca`: seeds Claude's first-run answers in `~/.claude.json`, applies the Claude settings ([claude-settings.md](claude-settings.md)), starts the worktree sweep, waits for `tailscale0`, and runs `orca serve --port 6768 --pairing-address <tailnet IP> --json`.
+CI, on every push: lint, build, a smoke test (the server comes up, Docker works from inside, the sweep works), then the multi-arch image tagged `<branch>` and `sha-<sha>`, plus `main` on `main`.
 
 ### Your own image
 
-Three kinds of personal things, three places:
+What is personal goes in one of three places, never in this repository:
 
-- **software** (binaries, MCP servers): an image of the person's own, `FROM` this one, built by their CI, named in `orca_image`;
-- **text** (permissions, `CLAUDE.md`, skills, `config/mcp.json`): the settings repository, pulled at every start, so a permission needs no rebuild;
-- **configuration**: `.env.tpl`, versioned, with secrets as references to 1Password items.
+- **software** (binaries, MCP servers): the person's own image, `FROM` this one, named in `orca_image`. An image is reproducible, says what is in it, and handles any release format with `RUN`; installing at boot would give none of that. The image must be public: the host does no registry login.
+- **text** (permissions, `CLAUDE.md`, skills, `config/mcp.json`): the settings repository, pulled at every start.
+- **configuration**: `.env.tpl`, with secrets as references to 1Password items.
 
-Why an image rather than installing tools when the host starts: an image built from a pinned base is the same wherever it runs, `docker history` says what is in it, versions are fixed at build time, and `RUN` handles any release format. The cost is a rebuild for a new tool, and an image that goes stale when the base moves; Dependabot on a digest-pinned `FROM` turns that into a pull request. The image must be public: the host does no registry login.
+## 2. The stack
 
-### CI
+`compose.yaml` lists every variable a host takes at the top, all read from one env file. The `orca-host` container also gets the whole file, so a new variable needs no change to compose.
 
-On every push: lint (hadolint, shellcheck, `terraform fmt` and `validate`, the rendered first-boot script, the firewall rules), build, a smoke test (the server reports ready, Docker works from inside, the worktree sweep removes a stack whose directory is gone), then push the multi-arch image tagged `<branch>` and `sha-<sha>`, plus `main` on `main`. A host or a derived image pins a build with its `sha-` tag or a digest.
+- `tailscale` uses `TS_AUTHKEY` once, on its first start, for a node tagged `orca-host` that never expires.
+- `orca-host` mounts `/home/orca` from the data disk at the same path as on the VM, so a project's bind mounts point at the same files, and gets the VM's Docker socket, so project stacks run next to it.
 
-## The stack
+`compose.laptop.yaml` adapts the stack to Docker Desktop on a Mac, for development.
 
-`compose.yaml` is the contract of a host: every personal value is a variable listed at the top, read from one env file. Compose reads the file for the variables it names, and the `orca-host` container gets all of it (`env_file`), so a new variable needs no change to the compose file.
+## 3. The VM
 
-- `tailscale`: host network, `NET_ADMIN`, `/dev/net/tun`. `TS_AUTHKEY` is used once, on the first start, for a node tagged `orca-host`, which never expires. The identity then lives in `tailscale/` on the data disk.
-- `orca-host`: host network, `/home/orca` from the data disk, the Docker socket.
+**The first-boot script** is everything the VM is, and it is idempotent:
 
-On a Mac, `compose.laptop.yaml` adapts it to Docker Desktop, which has no `/dev/net/tun`, no host network, and no unix sockets in bind mounts: the laptop's own Tailscale is the node, port 6768 is published, and the home is a named volume.
+- the user `core` with its SSH key, no password login;
+- the data disk mounted at `/var/lib/orca`, formatted only if empty;
+- Docker, pinned, with its data root on the data disk (the graph-driver store, so images don't land on the boot disk);
+- a firewall: only the tailnet, Tailscale's UDP port and SSH (until `make lockdown`) come in, and nothing from the internet reaches a container;
+- three units: `orca-env` renders the env file, `orca` pulls the image and starts the stack, `orca-update.timer` restarts `orca` every five minutes.
 
-## The host
+**The disks.** The boot disk (Debian, Docker, `/opt/orca`) goes with the VM. The data disk stays: checkouts, Orca and Claude state, the Tailscale identity, Docker's images and volumes.
 
-**Terraform state.** One state per host, in a Google Cloud Storage bucket of the person's project, whatever the provider: `make bootstrap` creates the bucket, and each host has its prefix, `orca-host/<name>`. `plan`, `apply` and `rebuild` run `make init` first, against the host `TFVARS` names, so they never act on another host's state. Terraform reads the bucket with application-default credentials, or gcloud's access token when there are none.
+**Terraform state.** One per host, in a Google Cloud Storage bucket whatever the provider, under `orca-host/<name>`. `plan`, `apply` and `rebuild` run `make init` first, so they always act on the host `TFVARS` names.
 
-**The first-boot script** is everything the VM is. Terraform renders it from `compose.yaml` and `host/`. It is idempotent, and it does:
+## 4. Secrets
 
-- the user `core`, its SSH key, sudo and Docker; no password login;
-- the data disk, formatted only if empty, mounted at `/var/lib/orca`, with `/home/orca` pointing into it;
-- Docker from Docker's apt repository, versions pinned and held (bumped by hand); Debian's own packages update unattended;
-- Docker's data root on the data disk, using the graph-driver store, not containerd's, whose images would sit on the boot disk;
-- `/opt/orca`: the compose file, the scripts, the host's name and image, and the laptop's templates if there are any;
-- a firewall (nftables, in its own table beside Docker's): in, only the tailnet, Docker's bridges, ICMP, DHCP, Tailscale's UDP port and SSH (until `make lockdown`); no new connection from the internet reaches a container, so a project's `ports:` stay on the tailnet;
-- three units: `orca-env` renders the env file, `orca` pulls the image and runs the stack, `orca-update.timer` restarts `orca` every five minutes.
+One file, one token, one vault. `make secret` writes a 1Password service-account token to `/var/lib/orca/op-token` over SSH, so no secret goes through Terraform. The token reads one vault, read-only.
 
-**Disks.** The boot disk holds Debian, Docker and `/opt/orca`, and goes with the VM. The data disk holds everything under `/var/lib/orca` and stays: checkouts, Orca and Claude state, the Tailscale identity, Docker's images and volumes. A project's database in a Docker volume is still a worktree database: its setup hook creates it, its archive script removes it. `docker system df` from `make shell` says what fills the disk.
+At every start, `orca-env` renders the env file from the templates (the image's `/etc/orca-host/env*.tpl`, then the laptop's), resolving every `{{ op://… }}`. If one fails, the stack stays down rather than start on part of its environment.
 
-## Secrets
+- **Several accounts**: another account's token is a line `OP_SERVICE_ACCOUNT_TOKEN_<NAME>` of `.env.tpl`, and its secrets go in `.env.<name>.tpl`.
+- **Rotation**: a token changed in 1Password reaches the host with `make restart`. When the service-account token expires: a new one in its item, `make secret`, `make restart`.
+- **Sessions** get `OP_SERVICE_ACCOUNT_TOKEN` too, so a project's setup hook can run `op inject`. That's why the vault holds technical tokens only, no passwords. In `auto` mode, Claude needs an allow rule for `op` in the settings repository.
 
-The chain is one file, one token, one vault. `/var/lib/orca/op-token` holds a 1Password service-account token, read-only on one vault, written by `make secret` over SSH so that no secret goes through Terraform. The first time, the host isn't on the tailnet yet (it joins with a key it reads using that very token), so `make secret` goes through IAP on Google Cloud, or the public address on OVH.
+## 5. Providers
 
-At every start, `orca-env` renders the env file from the templates, the image's `/etc/orca-host/env*.tpl` first, then the laptop's (`/opt/orca/env*.tpl`), the last value of a variable winning, every `{{ op://… }}` resolved by `op inject`. A template that fails to resolve keeps the stack down rather than starting it on part of its environment; the serial console says why. `make restart` copies the laptop's templates again first, so a new line needs no rebuild.
+| | Google Cloud | OVH |
+|---|---|---|
+| The machine | a VM; the script runs as its `startup-script`, at every boot, and stops early once applied | a VPS, ordered or imported by `ovh_vps`; the script runs once after a reinstall (`postInstallScript`), gzipped because OVH refuses it raw, sent by `ovhcloud` since the provider can't |
+| The data disk | regional, in two zones: a zone out of stock is a new `zone` and a `make apply`. A snapshot a day, 7 kept | the VPS's additional disk if there is one (`data_device`); without one, a reinstall wipes everything |
+| Getting in | its own VPC, nothing open; SSH over the tailnet, or IAP as a break-glass | SSH on the public address until `make lockdown`; OVH's KVM console as a break-glass |
+| Deleting it | `make destroy`: VM, disk, snapshots and state | cancelled in OVH's control panel; Terraform never cancels a VPS |
+| Size and cost | `e2-standard-4` by default (4 vCPU, 16 GB, about three project stacks): about $135 a month, $160 with `n2d-standard-4` | about €10 (VPS-3) to €20 (VPS-4) a month excl. VAT, one-year commitment |
 
-**Several 1Password accounts.** A service account reads one vault of one account. For another account: a service account there, its token as a line `OP_SERVICE_ACCOUNT_TOKEN_<NAME>` of `.env.tpl`, and a template `.env.<name>.tpl` resolved with it. The file name is the whole declaration.
+## 6. How a change reaches the host
 
-**Rotation.** A token changed in 1Password reaches the host with `make restart`. The service-account token itself expires: a new one in its item, then `make secret` and `make restart`.
+- **By itself**: every five minutes the host pulls the image tag it follows; compose recreates the container only if the image changed. This closes open terminals. A host pinned to a `sha-` tag never moves.
+- **`make restart`**: copies the laptop's templates, renders the env file again, restarts the container (which pulls the settings repository again).
+- **`make rebuild`**: a new Debian from the first-boot script, the data disk kept. Needed after a change to `compose.yaml` or `host/`.
 
-**In the sessions.** The env file also carries `OP_SERVICE_ACCOUNT_TOKEN`, so a session's `op` reads the same vault, and a project's setup hook can run `op inject -i .env.tpl -o .env` with nothing to do on a laptop. Every session can read that vault: that's why it holds technical tokens only, read-only, with no passwords. The same file already gives every session `GH_TOKEN` and `CLAUDE_CODE_OAUTH_TOKEN`. In `auto` mode, Claude Code's classifier refuses `op` unless the settings repository allows it.
+## 7. Details
 
-## Deleted worktrees
-
-Orca deletes a worktree without telling the host, and what it started stays behind. Every five minutes, `prune-stacks` in the `orca-host` container takes down every compose project whose directory under `/home/orca` no longer exists, with its volumes and the images compose built for it (`down -v --rmi local`, found by compose's own labels; a pulled `postgres` image stays). Then it caps Docker's build cache at 10 GB, oldest first.
-
-Not covered: a stack brought down without `-v` before its worktree is deleted leaves no container to find it by, so its volumes stay (that's the project's archive script's job), and an image built by hand stays. Orca's own trash fails on files `orca` doesn't own: a project's containers must not write into the worktree as root.
-
-## On Google Cloud
-
-- **The VM** runs the first-boot script as its `startup-script`, at every boot; the script stops at its first lines when it has already applied itself. `machine_type` defaults to `e2-standard-4` (4 vCPU, 16 GB: about 4 GB per project stack, so three stacks and Orca). E2, N2 or N2D only: a regional disk attaches to no other series.
-- **The data disk** is regional, copied in the two `data_disk_zones`, so when the VM's zone runs out of machines, the VM moves to the other zone with a `make apply` and the disk stays. A snapshot a day, 7 kept. It is `prevent_destroy`: only `make destroy` deletes it.
-- **Network**: its own VPC; nothing reaches the VM from the internet. SSH goes over the tailnet, or through IAP as a break-glass (`gcloud compute ssh <name> --tunnel-through-iap`, with OS Login). The serial console shows the boot log and both units' output.
-- **`make destroy`** deletes the VM, the disk, its snapshots and the host's state, after asking for the name.
-- **Cost**, at list prices in Paris: about $135 a month on the defaults (the VM about $113, the regional disk $13, the rest a few dollars), about $160 with an `n2d-standard-4`. A one-year commitment takes about 40% off the VM. The billed amounts: the console, Billing → Reports, filtered on the project.
-
-## On OVH
-
-- **The VPS** is `ovh_vps`. Without `service_name`, `make apply` orders one (`plan_code`, `datacenter`), paid with the account's default method; with it, it imports the one already ordered. Terraform never cancels or replaces a VPS (`prevent_destroy`): cancelling is in the control panel.
-- **The install.** A VPS takes no custom image, but `POST /vps/{service}/rebuild` runs a script once after a reinstall (`postInstallScript`): that's the first-boot script, gzipped and base64-encoded, since OVH answers a 500 to it raw. The `ovh` provider can't pass that script, so `terraform_data.install` calls `ovhcloud vps reinstall`. It reinstalls the VPS when the image or the SSH key changes, or on `make rebuild`; a change to the script alone waits for a rebuild.
-- **Tools**: Terraform and `ovhcloud` run on the laptop; `op run` gives them the `ovh-api` item from 1Password.
-- **SSH** answers on the public address until `make lockdown`, then on the tailnet only; OVH's KVM console is the break-glass.
-- **Disk**: with an additional disk (`data_device`), `/var/lib/orca` survives a reinstall. Without one, it's on the root disk and a reinstall wipes it, pairing included.
-
-## How a change reaches the host
-
-- **Redeploy**, on its own: every five minutes the host pulls the image tag it follows, and compose recreates the container only if the image changed. A merge to `main` reaches every host on the base image without anyone doing anything, and closes their open terminals. A host pinned to a `sha-` tag never moves.
-- **`make restart`**: copies the laptop's templates, renders the env file again, and restarts the container even if nothing changed, so the settings repository is pulled again.
-- **`make rebuild`**: a new Debian from the first-boot script (the VM on Google Cloud, a reinstall on OVH). Needed after a change to `compose.yaml` or `host/`. The data disk stays.
-
-## Pairing
-
-`orca serve` prints one pairing link per run, for the desktop by default. `make pair-desktop` reads it from the container's logs and hands it to `orca environment add` on the laptop. `make pair-mobile` restarts the server in mobile mode, shows its link as a QR code, then restarts it back. Pairings survive restarts and rebuilds. A pairing link is a credential.
-
-## GitHub token
-
-A classic token with the `repo` and `read:org` scopes. Fine-grained tokens are per organisation and can't read GHCR; `read:org` is what the mobile app needs to list repositories when you create a worktree.
-
-## Host keys and workspace trust
-
-Every rebuild brings a new SSH host key, and the tailnet already authenticates the machine, so the Makefile skips the host-key check. For your own `ssh core@<name>`, put `StrictHostKeyChecking no` and `UserKnownHostsFile /dev/null` under `Host <name>` in `~/.ssh/config`.
-
-Claude Code asks to trust a workspace once per project, as on a laptop: the trust covers a checkout's worktrees and can't be granted from a parent folder.
+- **Deleted worktrees.** Every five minutes, `prune-stacks` takes down every compose project whose directory under `/home/orca` is gone, with its volumes and the images it built, then caps the build cache at 10 GB. A stack brought down without `-v` before its worktree is deleted can't be found, so its volumes stay. A project's containers must not write into the worktree as root, or Orca can't delete it.
+- **Pairing.** `orca serve` prints one pairing link per run. `make pair-desktop` hands it to `orca environment add` on the laptop; `make pair-mobile` restarts the server in mobile mode, shows its link as a QR code, then restarts it back. Pairings survive rebuilds.
+- **GitHub token.** A classic token with `repo` and `read:org`: fine-grained ones can't read GHCR, and the mobile app needs `read:org` to list repositories.
+- **Host keys.** Each rebuild brings a new one; the Makefile skips the check, since the tailnet already authenticates the machine.
+- **Workspace trust.** Claude asks once per project, as on a laptop; it can't be granted from a parent folder.
