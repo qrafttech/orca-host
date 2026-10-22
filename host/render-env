@@ -28,7 +28,7 @@ OP_SERVICE_ACCOUNT_TOKEN=$(tr -d '\r\n' < /var/lib/orca/op-token)
 export OP_SERVICE_ACCOUNT_TOKEN
 # Failing is the point — the stack must not come up on the env file of the last boot, nor on part of
 # its environment. `make secret` is the way back.
-rendered=$(OP_INJECT="docker run --rm -i -e OP_SERVICE_ACCOUNT_TOKEN 1password/op:2.39.0 op inject" \
+rendered=$(OP_INJECT="docker run --rm -i -e OP_SERVICE_ACCOUNT_TOKEN 1password/op:2.41.1 op inject" \
   /opt/orca/inject-env "$img"/*.tpl /opt/orca/*.tpl)
 umask 077
 printf '%s\nOP_SERVICE_ACCOUNT_TOKEN=%s\n' "$rendered" "$OP_SERVICE_ACCOUNT_TOKEN" > /var/lib/orca/env.tmp

@@ -7,13 +7,13 @@
 # renovate: datasource=github-releases depName=stablyai/orca
 ARG ORCA_VERSION=1.4.237
 # renovate: datasource=npm depName=@anthropic-ai/claude-code
-ARG CLAUDE_CODE_VERSION=2.1.282
+ARG CLAUDE_CODE_VERSION=2.1.308
 # renovate: datasource=github-releases depName=cli/cli
-ARG GH_VERSION=2.101.0
+ARG GH_VERSION=2.103.0
 ARG DOCKER_VERSION=29.8.1
 # Also pinned in host/render-env, which renders the env file with the same CLI before this
 # image is pulled. Two independent pins: the VM's copy must work even when this image does not.
-ARG OP_VERSION=2.39.0
+ARG OP_VERSION=2.41.1
 
 # --- Orca: the official AppImage, extracted once (no FUSE in a container) ---------------------------------
 # An AppImage is an ELF runtime with a squashfs appended: unsquashfs at the runtime's size extracts it without
