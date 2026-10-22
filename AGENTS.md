@@ -13,7 +13,7 @@ A VM that runs `orca serve` headless, one host per person, all of that person's 
 - **Plain facts, no state, no history.** The README says what a host is and how one is brought up, not what was done on which day, on which machine, for which project. No dates, no IPs, no IDs, no project or client names, no reference to other repositories or issues. What happened lives in the git log and in the issue trackers of the projects that use the host.
 - **The README is the quickstart**, for a person: short, the steps and the commands. How it works and why goes to `.claude/knowledge/` (table below), not to the README.
 - **The table at the end of this file is the specification.** Every step is marked *script* or *by hand*; the goal is that every *by hand* row becomes a *script* row. A new manual step is added to the table before it is automated, not after.
-- **Pinned versions.** Orca is pinned to the desktop client's version (protocol compatibility); Claude Code is pinned. A bump is a commit that says why.
+- **Pinned versions, bumped by Renovate.** Every version is pinned; Renovate opens a pull request per release, its release notes the why. Orca follows its latest release, because the desktop and mobile clients update themselves and the mobile app refuses an older host. A pin Renovate cannot infer carries a `# renovate:` comment naming its source.
 
 ## Knowledge base
 

@@ -1,0 +1,34 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Dockerfile build args, each under a `# renovate: datasource=… depName=…` comment",
+      "managerFilePatterns": ["/(^|/)Dockerfile$/"],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\nARG \\w+=(?<currentValue>\\S+)"
+      ]
+    },
+    {
+      "customType": "regex",
+      "description": "The op CLI the VM renders the env file with, before the image is pulled",
+      "managerFilePatterns": ["/^host/render-env$/"],
+      "matchStrings": ["1password/op:(?<currentValue>[0-9.]+) "],
+      "datasourceTemplate": "docker",
+      "depNameTemplate": "1password/op"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "Release tags are v-prefixed; Orca's mobile tags (mobile-android-v…) are not, and are left out",
+      "matchDatasources": ["github-releases"],
+      "extractVersion": "^v(?<version>\\d+\\.\\d+\\.\\d+)$"
+    },
+    {
+      "description": "The image's op and the VM's op move together",
+      "matchPackageNames": ["1password/op"],
+      "groupName": "1password op"
+    }
+  ]
+}
