@@ -1,137 +1,203 @@
 # orca-host
 
-Your own [Orca](https://github.com/stablyai/orca) server in the cloud: a Debian VM on GCP or on an OVH VPS, reached from the Orca desktop and mobile apps over your tailnet. One host per person, all of their projects on it. How it works and why: [`.claude/knowledge/`](.claude/knowledge/).
+Your own [Orca](https://github.com/stablyai/orca) server in the cloud. It runs on a Debian VM, on Google Cloud or on an OVH VPS, and you use it from the Orca desktop and mobile apps over your tailnet. Each person gets one host and puts all of their projects on it. If you want to know how it works and why, read [`.claude/knowledge/`](.claude/knowledge/).
 
 <img src="docs/architecture.svg" alt="The Orca clients reach the VM over the tailnet; in the VM, a tailscale container carries the address and an orca-host container runs orca serve; project stacks are sibling containers on the VM's Docker; a data disk holds the home, the Tailscale identity, Docker's images and volumes, and the env file, rendered from 1Password at every boot">
 
 ## Install
 
-On the laptop: `docker`, `terraform`, `gcloud`, `op` (1Password CLI), `jq`, `ssh`, `qrencode`, the Orca desktop CLI.
+You need these on your laptop: `terraform`, `gcloud`, `op` (the 1Password CLI), `jq`, `ssh`, `qrencode`, and the Orca desktop app with its `orca` command. Your provider may need one more tool: see [Providers](#providers).
 
-1. **Tailscale**, once per tailnet: a tag `orca-host`, owner `autogroup:admin` (admin console → Access controls → Tags).
-
-   <img src="docs/tailscale-tag.png" width="49%" alt="Create tag">
-
-2. **1Password**, once: a vault for the host, with the tokens your agents use and no passwords. A service account on it, read-only; its token in an item `orca-host-op-token` of that vault.
-3. **Google Cloud**, once per project: `gcloud auth application-default login`, then `make bootstrap` (the bucket that keeps Terraform's state).
-4. **Two files of yours**, no secret in either. Keep them in a repository of yours and tell `make` where they are:
+1. **Tailscale** (once per tailnet). In the admin console, go to Access controls → Tags and create a tag called `orca-host`, owned by `autogroup:admin`.
+2. **1Password** (once). Create a vault for the host. Put in it the tokens your agents need, and no passwords. Then create a read-only service account on that vault, and save its token in the same vault, in an item called `orca-host-op-token`.
+3. **A bucket for Terraform's state** (once). Whatever the provider, Terraform keeps track of your hosts in a Google Cloud Storage bucket. Log in with `gcloud auth application-default login`, then run `make bootstrap`.
+4. **Pick a provider**, Google Cloud or OVH, and do what [its section](#providers) says.
+5. **Write your two config files.** Put them in a folder of yours, for instance `~/orca-config/`, and tell `make` where they are:
 
    ```sh
-   export TFVARS=~/my-repo/orca-host/gcp.tfvars   # from terraform/gcp/terraform.tfvars.example
-   export ENV_TPL=~/my-repo/orca-host/.env.tpl
+   export PROVIDER=gcp                             # or ovh
+   export TFVARS=~/orca-config/orca-gcp.tfvars     # the machine: named after your host
+   export ENV_TPL=~/orca-config/.env.tpl           # what runs on it
    ```
 
-   `.env.tpl`, one `VAR=value` per line, a secret as a reference to an item of the vault:
+   **The tfvars file** describes the machine. Start from your provider's example (`terraform/gcp/terraform.tfvars.example` or `terraform/ovh/terraform.tfvars.example`). For Google Cloud:
+
+   ```hcl
+   name           = "orca-gcp"                      # your host's name, on the tailnet too
+   project        = "my-gcp-project"
+   zone           = "europe-west9-a"
+   op_vault       = "AI Agents"                     # the vault from step 2
+   ssh_public_key = "ssh-ed25519 AAAA... me@laptop"
+   ```
+
+   **`.env.tpl`** lists the variables your host starts with, one per line. A secret is never written there: you point to the 1Password item that holds it.
 
    ```sh
-   # Tailscale → Settings → Keys: not reusable, not ephemeral, tag orca-host. One key per new host
-   TS_AUTHKEY={{ op://Vault/tailscale/authkey }}
-   # `claude setup-token`
-   CLAUDE_CODE_OAUTH_TOKEN={{ op://Vault/claude/token }}
-   # a classic token, scopes repo + read:org
-   GH_TOKEN={{ op://Vault/github/token }}
-   GIT_AUTHOR_NAME=...
-   GIT_AUTHOR_EMAIL=...
-   # optional: anything else reaches every session as is
-   FOO_TOKEN={{ op://Vault/foo/token }}
+   # Tailscale → Settings → Keys: not reusable, not ephemeral, tag orca-host. A new key for each new host
+   TS_AUTHKEY={{ op://AI Agents/tailscale/authkey }}
+   # from `claude setup-token`
+   CLAUDE_CODE_OAUTH_TOKEN={{ op://AI Agents/claude/token }}
+   # a classic GitHub token, with the repo and read:org scopes
+   GH_TOKEN={{ op://AI Agents/github/token }}
+   GIT_AUTHOR_NAME=Ada Lovelace
+   GIT_AUTHOR_EMAIL=ada@example.com
    ```
 
-   <img src="docs/tailscale-auth-key.png" width="49%" alt="Generate auth key"> <img src="docs/github-token.png" width="49%" alt="Token scopes">
+   Neither file holds a secret, so you can keep the folder in git.
 
-5. **The host**:
+6. **Bring the host up.**
 
    ```sh
-   make apply     # creates the VM and its data disk; answer yes
-   make secret    # a minute later: gives the host its 1Password token
-   make pair      # connects the desktop app, then the phone
+   make apply     # creates the machine; type yes when asked
+   make secret    # wait a minute first: gives the host its 1Password token
+   make pair      # connects your desktop app, then your phone
    ```
 
-   In the desktop app: Settings → Remote Orca Servers → Advanced → Active Server. A terminal that opens is a host that works.
+   In the desktop app, open Settings → Remote Orca Servers → Advanced → Active Server and pick your host. If you can open a terminal, it works.
 
-## On an OVH VPS
+## Providers
 
-The same steps, with `export PROVIDER=ovh` and a `TFVARS` from `terraform/ovh/terraform.tfvars.example`. Terraform runs from an image: no `terraform` needed. Step 3 still applies, for the state bucket.
+|  | Google Cloud | OVH |
+|---|---|---|
+| Price, roughly | about $160 a month: 4 vCPU, 16 GB | about €10 a month excl. VAT for a VPS-3 (6 vCPU, 12 GB), €20 for a VPS-4 (8 vCPU, 24 GB), with a one-year commitment |
+| The machine | a VM, created and deleted by `make` | a VPS, ordered by `make apply` and cancelled in OVH's control panel |
+| Your data | a disk copied in two zones, plus a snapshot a day, 7 kept | the VPS's disk; OVH's backup is an option |
+| Out of stock | switch to the disk's other zone | wait, or pick another datacenter |
+| Extra tool | none | the [OVH CLI](https://github.com/ovh/ovhcloud-cli), `ovhcloud` |
 
-- **OVH API credentials**: [createtoken](https://eu.api.ovh.com/createToken/?GET=/vps/*&POST=/vps/*&PUT=/vps/*&POST=/order/cart*&GET=/me/payment/method&GET=/me/order*&POST=/me/order*), as an item `ovh-api` of the vault: fields `endpoint` (`ovh-eu`), `application_key`, `application_secret`, `consumer_key`.
-- **The VPS**: `make apply` orders one, paid with the account's default method; or takes one already ordered, its `service_name` in the tfvars. The first `make apply` reinstalls it: what was on it goes.
-- **After `make pair`**: `make lockdown`, so SSH answers on the tailnet only.
+### Google Cloud
+
+The login from step 3 is all Terraform needs. `make destroy` deletes the host for good, with its disk, its snapshots and its state; it asks you to type the host's name first.
+
+If the VM's zone runs out of machines, set `zone` to the other value of `data_disk_zones` in your tfvars and run `make apply`: the VM moves, the disk stays.
+
+### OVH
+
+- **API credentials.** Create them on [this page](https://eu.api.ovh.com/createToken/?GET=/vps/*&POST=/vps/*&PUT=/vps/*&POST=/order/cart*&GET=/me/payment/method&GET=/me/order*&POST=/me/order*) (the rights are already filled in), and save them in the vault as an item called `ovh-api`, with the fields `endpoint` (`ovh-eu`), `application_key`, `application_secret` and `consumer_key`.
+- **The VPS.** `make apply` orders one and pays with your account's default payment method. If you already have one, put its `service_name` in your tfvars instead. Either way, the first `make apply` reinstalls it, so anything already on it is lost.
+- **After `make pair`**, run `make lockdown`: from then on, SSH only answers over the tailnet.
+
+## Your own tools
+
+The host runs an image with Claude, `gh`, `git`, Docker, Node, Python and Ruby. For anything else, you build your own image on top of it. Nothing gets installed on the host by hand, so a rebuilt host comes back exactly the same.
+
+Say you want Claude to read Notion and Slack. It takes three things:
+
+1. **The servers, in your image.** Keep a `Dockerfile` in a repository of yours, for instance next to your config files:
+
+   ```dockerfile
+   # Notion's MCP server is an npm package: install it with npm, then copy it over
+   FROM node:22-slim AS notion
+   RUN npm install --global --omit=dev --prefix /opt/notion-mcp @notionhq/notion-mcp-server@2.5.2
+
+   FROM ghcr.io/qrafttech/orca-host:main
+
+   # Slack's MCP server is a single binary
+   ARG TARGETARCH
+   RUN curl -fsSL -o /usr/local/bin/slack-mcp-server \
+         "https://github.com/korotovsky/slack-mcp-server/releases/download/v1.3.0/slack-mcp-server-linux-${TARGETARCH}" \
+    && chmod +x /usr/local/bin/slack-mcp-server
+
+   COPY --from=notion /opt/notion-mcp /opt/notion-mcp
+   RUN ln -s /opt/notion-mcp/bin/notion-mcp-server /usr/local/bin/notion-mcp-server
+   ```
+
+   Have your CI build it and publish it as a public image, for instance `ghcr.io/me/orca-host:main`. Add `orca_image = "ghcr.io/me/orca-host:main"` to your tfvars and run `make rebuild`, once. From then on, the host picks up every new build of your image by itself.
+
+2. **Their tokens, in `.env.tpl`:**
+
+   ```sh
+   NOTION_TOKEN={{ op://AI Agents/notion/token }}
+   SLACK_TOKEN={{ op://AI Agents/slack/token }}
+   ```
+
+3. **Tell Claude about them**, in the `config/mcp.json` of your [Claude settings](#claude-settings) repository:
+
+   ```json
+   {
+     "mcpServers": {
+       "notion": { "command": "notion-mcp-server", "env": { "NOTION_TOKEN": "${NOTION_TOKEN}" } },
+       "slack": { "command": "slack-mcp-server", "args": ["-t", "stdio"], "env": { "SLACK_MCP_XOXP_TOKEN": "${SLACK_TOKEN}" } }
+     }
+   }
+   ```
+
+   Push, then `make restart`.
+
+To follow the updates of this base image too, turn on Dependabot for Docker in your image's repository.
+
+## Claude settings
+
+Two optional lines in `.env.tpl` set up Claude on the host:
+
+```sh
+CLAUDE_PERMISSION_MODE=auto              # or default, acceptEdits, plan
+CLAUDE_SETTINGS_REPO=me/claude-settings  # a repository of yours
+```
+
+Every time the host starts, it takes from that repository whatever of these it finds:
+
+```
+claude-settings/
+├── CLAUDE.md             # your instructions to Claude
+├── settings.json         # your permissions, under "permissions"
+├── .claude/skills/       # your skills
+└── config/mcp.json       # your MCP servers
+```
+
+Change something, push, then `make restart`. More in [claude-settings.md](.claude/knowledge/claude-settings.md).
 
 ## Projects
 
-In the app: Add a project → Clone from URL, the https URL, parent folder `/home/orca`.
+In the app, click Add a project → Clone from URL, paste the https URL, and choose `/home/orca` as the parent folder.
 
-<img src="docs/orca-add-project.png" width="49%" alt="Add a project"> <img src="docs/orca-clone-from-url.png" width="49%" alt="Clone from URL">
-
-A project starts itself from its worktree setup hook (`docker compose`, `op inject -i .env.tpl -o .env`). What it starts is at `http://<tailnet IP>:<port>`. A deleted worktree is cleaned up within 5 minutes.
+Each project starts itself from its worktree setup hook (`docker compose`, `op inject -i .env.tpl -o .env`, and so on). Whatever it runs is at `http://<tailnet IP>:<port>`. When you delete a worktree, the host cleans up after it within five minutes.
 
 ## Day to day
 
-| Command | Does |
+| Command | What it does |
 |---|---|
-| `make restart` | takes your changes now; ends live terminals |
-| `make logs` | the host's logs |
-| `make shell` | a shell as an Orca terminal sees it |
-| `make ssh` | a shell on the VM |
-| `make destroy` | GCP: deletes the host for good, disk and state included; asks for its name |
+| `make restart` | restarts the host with your latest `.env.tpl`, tokens and Claude settings |
+| `make rebuild` | rebuilds the machine, after you change `orca_image` or this repository's `compose.yaml` or `host/` |
+| `make logs` | shows the host's logs |
+| `make shell` | opens a terminal like the ones in Orca |
+| `make ssh` | opens a terminal on the machine itself |
+| `make secret` | gives the host a new 1Password token, once you've renewed it; then `make restart` |
+| `make destroy` | deletes the host for good (Google Cloud) |
 
-After `make destroy`, a host that was offline stays in Tailscale: remove it in the admin console (Machines), or a new host of that name joins as `<name>-1`.
+A new build of this image, or of your own, reaches the host by itself within five minutes. `restart` and `rebuild` close the terminals you have open, but your checkouts, your pairing and your Docker images and volumes stay.
 
-## When you change something
-
-| You changed | You do |
-|---|---|
-| this repository, merged to `main` | nothing if the host runs the base image; else merge Dependabot's pull request in yours |
-| your own image, merged to its `main` | nothing: the host redeploys within five minutes |
-| a token in 1Password, `.env.tpl`, your settings repository | `make restart` |
-| `orca_image`, `compose.yaml`, `host/` | `make rebuild` |
-| `zone`, to the other of `data_disk_zones` (the zone is out of stock, or down) | `make apply` |
-| nothing, but the service-account token expired | a new token in its item, `make secret`, `make restart` |
-
-Each ends live terminals and keeps the data disk: checkouts, pairing, Docker images and volumes.
+If the host was offline when you ran `make destroy`, it is still listed in Tailscale. Remove it from the admin console (Machines), otherwise a new host with the same name will show up as `<name>-1`.
 
 ## When a command fails
 
-| Message | What to do |
+| You see | Do this |
 |---|---|
-| `invalid_grant` … `invalid_rapt` | `gcloud auth application-default login`, then again |
-| `Reauthentication required` | your password at the prompt; a command it stopped, run again |
-| `Failed to lookup instance` (`make secret`) | the VM is still booting: a minute later, again |
-| `no name in …` | `export TFVARS=<your file>` |
+| `invalid_grant` … `invalid_rapt` | log in again with `gcloud auth application-default login`, then rerun the command |
+| `Reauthentication required` | type your Google password at the prompt; if the command stopped, run it again |
+| `Failed to lookup instance` (`make secret`) | the VM is still booting: wait a minute and try again |
+| `no name in …` | `make` can't find your tfvars: `export TFVARS=<your file>` |
 
-## Going further
+## Several 1Password accounts
 
-### Claude settings
-
-Two optional lines in `.env.tpl`: `CLAUDE_PERMISSION_MODE` (`default`, `acceptEdits`, `auto`, `plan`), and `CLAUDE_SETTINGS_REPO=<owner>/<repo>`, whose `permissions`, `CLAUDE.md`, `.claude/skills/` and `config/mcp.json` are applied at every start. Details: [claude-settings.md](.claude/knowledge/claude-settings.md).
-
-### Several 1Password accounts
-
-One service account reads one vault. For a vault in another account: a service account there, its token in the host's vault, and a second template next to `.env.tpl`:
+A service account can only read one vault. If some of your secrets live in another 1Password account, create a service account there too, save its token in the host's vault, and add a second file next to `.env.tpl`:
 
 ```sh
 # .env.tpl
-OP_SERVICE_ACCOUNT_TOKEN_ACME={{ op://Vault/acme-op-token/credential }}
+OP_SERVICE_ACCOUNT_TOKEN_ACME={{ op://AI Agents/acme-op-token/credential }}
 
-# .env.acme.tpl, resolved with that token
+# .env.acme.tpl, read with that token
 ACME_API_TOKEN={{ op://Acme Vault/api/credential }}
 ```
 
-A file that does not resolve keeps the host down. Every token reaches the sessions, so each vault stays technical and read-only.
+If one of these files can't be read, the host won't start. Every session can see these tokens, so keep those vaults for technical tokens only, and read-only.
 
-### Your own tools
+## Contribute
 
-An image of yours, `FROM` this one, built by your CI, public:
+Something missing, or broken? Changes are welcome.
 
-```dockerfile
-FROM ghcr.io/qrafttech/orca-host:main@sha256:<digest>
-RUN curl -fsSL -o /tmp/x "<url>" && echo "<sha256>  /tmp/x" | sha256sum -c - \
- && install -m 755 /tmp/x /usr/local/bin/<tool> && rm /tmp/x
-# optional: your templates travel with the image; the laptop's win over them
-COPY .env.tpl /etc/orca-host/env.tpl
-```
+1. Make your change on a branch and push it. CI checks it and publishes an image tagged with your branch name, slashes turned into dashes.
+2. Try it on your own host: set `orca_image = "ghcr.io/qrafttech/orca-host:<your-branch>"` in your tfvars, run `make rebuild`, and use the host as usual. Or try it on your Mac, with Docker Desktop: `make build`, then `make up`.
+3. Open a pull request. [AGENTS.md](AGENTS.md) has the few rules the repository follows; Claude reads it too.
 
-Then `orca_image = "ghcr.io/me/orca-host:main"` in your tfvars and `make rebuild`, once. Dependabot (`package-ecosystem: docker`) keeps the `FROM` up to date.
-
-## Develop
-
-Every push builds the image, tagged `<branch>` and `sha-<sha>`. On a Mac: `make build`, then `make up` runs it with Docker Desktop on the laptop's tailnet IP.
+Once it's merged, every host on the base image gets it within five minutes. Set `orca_image` back afterwards.
