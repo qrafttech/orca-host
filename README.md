@@ -141,6 +141,7 @@ updates:
 | `orca_image`, `compose.yaml`, `host/` | `make rebuild` |
 | `zone`, to the other of `data_disk_zones` (the VM's zone is out of stock, or down) | `make apply` |
 | nothing, but the service-account token expired | a new token in its item, `make secret`, `make restart` |
+| nothing, but the GCP host still runs Flatcar | [docs/migrate-from-flatcar.md](docs/migrate-from-flatcar.md) |
 
 All of them end live terminals and keep the data disk: checkouts, pairing, Docker images and volumes. To stay on one build, name its `sha-<sha>` tag in `orca_image`.
 
