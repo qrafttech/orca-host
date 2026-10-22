@@ -9,3 +9,5 @@ env
 # laptop compose state
 data/
 .pairing-url
+# files dropped into an Orca pane
+.orca/drops/
