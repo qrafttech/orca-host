@@ -59,7 +59,7 @@ You need these on your laptop: `terraform`, `gcloud`, `op` (the 1Password CLI), 
 
 |  | Google Cloud | OVH |
 |---|---|---|
-| Price, roughly | about $160 a month (4 vCPU, 16 GB) | €10 to €25 a month excl. VAT (VPS-3 or VPS-4) |
+| Price, roughly | about $160 a month: 4 vCPU, 16 GB | about €10 a month excl. VAT for a VPS-3 (6 vCPU, 12 GB), €20 for a VPS-4 (8 vCPU, 24 GB), with a one-year commitment |
 | The machine | a VM, created and deleted by `make` | a VPS, ordered by `make apply` and cancelled in OVH's control panel |
 | Your data | a disk copied in two zones, plus a snapshot a day, 7 kept | the VPS's disk; OVH's backup is an option |
 | Out of stock | switch to the disk's other zone | wait, or pick another datacenter |
@@ -79,28 +79,52 @@ If the VM's zone runs out of machines, set `zone` to the other value of `data_di
 
 ## Your own tools
 
-The host runs an image with Claude, `gh`, `git`, Docker, Node, Python and Ruby. For anything else, such as the MCP servers that let Claude read Notion or Slack, you build your own image on top of it. Nothing gets installed on the host by hand, so a rebuilt host comes back exactly the same.
+The host runs an image with Claude, `gh`, `git`, Docker, Node, Python and Ruby. For anything else, you build your own image on top of it. Nothing gets installed on the host by hand, so a rebuilt host comes back exactly the same.
 
-Keep a `Dockerfile` in a repository of yours, for instance next to your config files:
+Say you want Claude to read Notion and Slack. It takes three things:
 
-```dockerfile
-# Notion's MCP server is an npm package: install it with npm, then copy it over
-FROM node:22-slim AS notion
-RUN npm install --global --omit=dev --prefix /opt/notion-mcp @notionhq/notion-mcp-server@2.5.2
+1. **The servers, in your image.** Keep a `Dockerfile` in a repository of yours, for instance next to your config files:
 
-FROM ghcr.io/qrafttech/orca-host:main
+   ```dockerfile
+   # Notion's MCP server is an npm package: install it with npm, then copy it over
+   FROM node:22-slim AS notion
+   RUN npm install --global --omit=dev --prefix /opt/notion-mcp @notionhq/notion-mcp-server@2.5.2
 
-# Slack's MCP server is a single binary
-ARG TARGETARCH
-RUN curl -fsSL -o /usr/local/bin/slack-mcp-server \
-      "https://github.com/korotovsky/slack-mcp-server/releases/download/v1.3.0/slack-mcp-server-linux-${TARGETARCH}" \
- && chmod +x /usr/local/bin/slack-mcp-server
+   FROM ghcr.io/qrafttech/orca-host:main
 
-COPY --from=notion /opt/notion-mcp /opt/notion-mcp
-RUN ln -s /opt/notion-mcp/bin/notion-mcp-server /usr/local/bin/notion-mcp-server
-```
+   # Slack's MCP server is a single binary
+   ARG TARGETARCH
+   RUN curl -fsSL -o /usr/local/bin/slack-mcp-server \
+         "https://github.com/korotovsky/slack-mcp-server/releases/download/v1.3.0/slack-mcp-server-linux-${TARGETARCH}" \
+    && chmod +x /usr/local/bin/slack-mcp-server
 
-Have your CI build it and publish it as a public image, for instance `ghcr.io/me/orca-host:main`. Then add `orca_image = "ghcr.io/me/orca-host:main"` to your tfvars and run `make rebuild`, once. From then on, the host picks up every new build of your image by itself. To follow the updates of this base image too, turn on Dependabot for Docker in that repository.
+   COPY --from=notion /opt/notion-mcp /opt/notion-mcp
+   RUN ln -s /opt/notion-mcp/bin/notion-mcp-server /usr/local/bin/notion-mcp-server
+   ```
+
+   Have your CI build it and publish it as a public image, for instance `ghcr.io/me/orca-host:main`. Add `orca_image = "ghcr.io/me/orca-host:main"` to your tfvars and run `make rebuild`, once. From then on, the host picks up every new build of your image by itself.
+
+2. **Their tokens, in `.env.tpl`:**
+
+   ```sh
+   NOTION_TOKEN={{ op://AI Agents/notion/token }}
+   SLACK_TOKEN={{ op://AI Agents/slack/token }}
+   ```
+
+3. **Tell Claude about them**, in the `config/mcp.json` of your [Claude settings](#claude-settings) repository:
+
+   ```json
+   {
+     "mcpServers": {
+       "notion": { "command": "notion-mcp-server", "env": { "NOTION_TOKEN": "${NOTION_TOKEN}" } },
+       "slack": { "command": "slack-mcp-server", "args": ["-t", "stdio"], "env": { "SLACK_MCP_XOXP_TOKEN": "${SLACK_TOKEN}" } }
+     }
+   }
+   ```
+
+   Push, then `make restart`.
+
+To follow the updates of this base image too, turn on Dependabot for Docker in your image's repository.
 
 ## Claude settings
 
@@ -108,28 +132,20 @@ Two optional lines in `.env.tpl` set up Claude on the host:
 
 ```sh
 CLAUDE_PERMISSION_MODE=auto              # or default, acceptEdits, plan
-CLAUDE_SETTINGS_REPO=me/claude-settings  # a repository of yours, applied every time the host starts
+CLAUDE_SETTINGS_REPO=me/claude-settings  # a repository of yours
 ```
 
-That repository holds your `CLAUDE.md`, your permissions in `settings.json`, your skills in `.claude/skills/`, and your MCP servers in `config/mcp.json`. To give Claude the Notion and Slack servers of your own image:
+Every time the host starts, it takes from that repository whatever of these it finds:
 
-```json
-{
-  "mcpServers": {
-    "notion": { "command": "notion-mcp-server", "env": { "NOTION_TOKEN": "${NOTION_TOKEN}" } },
-    "slack": { "command": "slack-mcp-server", "args": ["-t", "stdio"], "env": { "SLACK_MCP_XOXP_TOKEN": "${SLACK_TOKEN}" } }
-  }
-}
+```
+claude-settings/
+├── CLAUDE.md             # your instructions to Claude
+├── settings.json         # your permissions, under "permissions"
+├── .claude/skills/       # your skills
+└── config/mcp.json       # your MCP servers
 ```
 
-and their tokens to `.env.tpl`:
-
-```sh
-NOTION_TOKEN={{ op://AI Agents/notion/token }}
-SLACK_TOKEN={{ op://AI Agents/slack/token }}
-```
-
-Push, then `make restart`. More in [claude-settings.md](.claude/knowledge/claude-settings.md).
+Change something, push, then `make restart`. More in [claude-settings.md](.claude/knowledge/claude-settings.md).
 
 ## Projects
 
