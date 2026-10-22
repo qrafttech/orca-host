@@ -1,4 +1,5 @@
-# orca-host, laptop side. Needs: docker, terraform, gcloud, op (1Password CLI), jq, ssh, qrencode, the Orca desktop CLI.
+# orca-host, laptop side. Needs: gcloud, op (1Password CLI), jq, ssh, qrencode, the Orca desktop CLI; terraform for a GCP host,
+# docker for an OVH one (and for build, up, env).
 # PROVIDER: gcp, the default, or ovh (an OVH VPS); the Terraform root is terraform/$(PROVIDER)/. On ovh, Terraform and the ovhcloud
 # CLI run from the image `make tools` builds: Docker, op and gcloud's application-default credentials are enough.
 # Two per-person files, plain configuration, versioned wherever you keep your host (the repository of your own image
