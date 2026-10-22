@@ -78,7 +78,7 @@ down:
 	docker compose -f compose.yaml -f compose.laptop.yaml --env-file env down
 
 ## host, on GCP or OVH
-secret bootstrap init plan apply rebuild lockdown pair-desktop pair-mobile restart logs shell ssh: $(TFVARS)
+secret bootstrap init plan apply rebuild lockdown destroy pair-desktop pair-mobile restart logs shell ssh: $(TFVARS)
 # the pairing URL of the running server, from the last orca_server_ready line of its logs; empty until it is up
 PAIRING_URL = $(SSH) core@$(NAME) docker logs orca-host 2>/dev/null \
 	  | jq -Rr 'fromjson? | select(.type=="orca_server_ready") | .pairing.url' | tail -1
@@ -142,6 +142,7 @@ ifeq ($(PROVIDER),ovh)
 	@echo "an OVH VPS is terminated in the OVH control panel"; exit 1
 else
 	@[ -n "$(NAME)" ] || { echo "no name in $(TFVARS): TFVARS names the host's file"; exit 1; }
+	@[ -n "$(PROJECT)" ] || { echo "no project in $(TFVARS): TFVARS names the host's file"; exit 1; }
 	@read -p "type $(NAME) to delete it ($(PROJECT), $(ZONE)), its data disk, its snapshots and its state: " n; [ "$$n" = "$(NAME)" ]
 	$(TF) init -reconfigure -backend-config=bucket=$(BUCKET) -backend-config=prefix=orca-host/$(NAME) >/dev/null
 	-$(SSH) -o ConnectTimeout=10 core@$(NAME) 'sudo docker exec tailscale tailscale logout'
