@@ -115,8 +115,10 @@ bootstrap:          ## once per project: the state bucket
 	    --uniform-bucket-level-access --public-access-prevention
 	gcloud storage buckets update gs://$(BUCKET) --versioning >/dev/null
 
-init:               ## terraform init against the state bucket, one prefix per host. Once per checkout.
-	$(TF) init -backend-config=bucket=$(BUCKET) -backend-config=prefix=orca-host/$(NAME)
+# -reconfigure: each host has its own state, under its own prefix. A checkout that last pointed at another host points
+# at this one now, and nothing is migrated: moving one host's state onto another's would be the error.
+init:               ## terraform init against the state bucket, one prefix per host, the host TFVARS names. Once per checkout, and per host.
+	$(TF) init -reconfigure -backend-config=bucket=$(BUCKET) -backend-config=prefix=orca-host/$(NAME)
 
 plan:
 	$(TF) plan $(TF_VARS)
