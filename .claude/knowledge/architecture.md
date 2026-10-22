@@ -33,7 +33,7 @@ laptop / phone ──tailnet──▶ VM (Debian, host/first-boot.sh.tftpl)
 - **`op`**, the 1Password CLI: the host's secrets are 1Password items, so it is infrastructure, like `gh`.
 - **`ruby`, `python3`, `node`**, for a project's Claude Code hooks, which run next to `claude` and not in the project's containers.
 
-Versions are build args at the top of the `Dockerfile`, bumped by Renovate, one pull request per release. Nothing else is in the image: a person's own tools go in their own image.
+Versions are build args at the top of the `Dockerfile`, bumped by Renovate in three pull requests: Orca alone, so its bump never waits on another; every other minor and patch release; every GitHub Actions release. A new Debian major is a pull request by hand, since it renames packages the image installs. Orca, Claude Code and `gh` come from download URLs, so a `# renovate:` comment above their `ARG` says where their releases are published. Nothing else is in the image: a person's own tools go in their own image.
 
 At start, the entrypoint gives `orca` the Docker socket's group and its home, then, as `orca`: seeds Claude's first-run answers in `~/.claude.json`, applies the Claude settings ([claude-settings.md](claude-settings.md)), starts the worktree sweep, waits for `tailscale0`, and runs `orca serve --port 6768 --pairing-address <tailnet IP> --json`.
 
