@@ -3,8 +3,12 @@
 # Built for amd64 and arm64. State is not in the image: /home/orca is a volume, see compose.yaml.
 # No /etc/orca-host/env*.tpl here: a derived image COPYs its own, the host reads them at boot (README).
 
-ARG ORCA_VERSION=1.4.205
+# Renovate bumps every pin below, one pull request per release (renovate.json). Those it cannot infer name their source.
+# renovate: datasource=github-releases depName=stablyai/orca
+ARG ORCA_VERSION=1.4.237
+# renovate: datasource=npm depName=@anthropic-ai/claude-code
 ARG CLAUDE_CODE_VERSION=2.1.282
+# renovate: datasource=github-releases depName=cli/cli
 ARG GH_VERSION=2.101.0
 ARG DOCKER_VERSION=29.8.1
 # Also pinned in host/render-env, which renders the env file with the same CLI before this
