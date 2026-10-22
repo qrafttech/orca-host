@@ -105,7 +105,7 @@ BOOTSTRAP_SSH = $(if $(filter ovh,$(PROVIDER)),$(SSH) -o ConnectTimeout=10 core@
 secret:             ## the service-account token, from 1Password, to the host
 	token=$$(op read "$(OP_TOKEN)" | tr -d '\r\n'); [ -n "$$token" ] || exit 1; \
 	$(if $(filter ovh,$(PROVIDER)),ip=$$($(TF) output -raw ipv4 </dev/null); \
-	  [ -n "$$ip" ] || { echo "no address for $(NAME): make init and make apply"; exit 1; };) \
+	  [ -n "$$ip" ] || { echo "no address for $(NAME): make apply"; exit 1; };) \
 	printf '%s' "$$token" | $(SSH) -o ConnectTimeout=10 core@$(NAME) "$(WRITE_TOKEN)" \
 	  || printf '%s' "$$token" | $(BOOTSTRAP_SSH) "$(WRITE_TOKEN)"
 
@@ -116,17 +116,20 @@ bootstrap:          ## once per project: the state bucket
 	gcloud storage buckets update gs://$(BUCKET) --versioning >/dev/null
 
 # -reconfigure: each host has its own state, under its own prefix. A checkout that last pointed at another host points
-# at this one now, and nothing is migrated: moving one host's state onto another's would be the error.
-init:               ## terraform init against the state bucket, one prefix per host, the host TFVARS names. Once per checkout, and per host.
-	$(TF) init -reconfigure -backend-config=bucket=$(BUCKET) -backend-config=prefix=orca-host/$(NAME)
+# at this one now, and nothing is migrated: moving one host's state onto another's would be the error. plan, apply and
+# rebuild run it first, so they act on the state of the host TFVARS names, never on the one the last init pointed at.
+# No name, no init: the prefix would be orca-host/ itself.
+init:               ## terraform init against the state bucket, one prefix per host, the host TFVARS names
+	@[ -n "$(NAME)" ] || { echo "no name in $(TFVARS): TFVARS names the host's file"; exit 1; }
+	$(TF) init -reconfigure -input=false -backend-config=bucket=$(BUCKET) -backend-config=prefix=orca-host/$(NAME) >/dev/null
 
-plan:
+plan: init
 	$(TF) plan $(TF_VARS)
 
-apply:              ## bring the host up (or update it)
+apply: init         ## bring the host up (or update it)
 	$(TF) apply $(TF_VARS)
 
-rebuild:            ## a new VM (GCP) or a reinstall (OVH), the data disk kept: what the VM is made of changed. Ends live terminals.
+rebuild: init       ## a new VM (GCP) or a reinstall (OVH), the data disk kept: what the VM is made of changed. Ends live terminals.
 	$(TF) apply $(TF_VARS) -replace=$(REPLACE)
 
 # An OVH host answers SSH on its public address until this, for the first `make secret`. Over the tailnet, so the

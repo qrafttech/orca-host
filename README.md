@@ -51,7 +51,6 @@ Needed on the laptop: `docker`, `terraform`, `gcloud`, `op` (1Password CLI), `jq
 6. **The host**:
 
    ```bash
-   make init      # once per checkout
    make apply     # VPC, data disk, a Debian VM made into the host at its first boot
    make secret    # the service-account token, over SSH (IAP until the host is on the tailnet)
    make pair      # the desktop client, then the phone (Tailscale on, same tailnet)
@@ -70,7 +69,6 @@ The same host on an OVH VPS, Debian underneath. `PROVIDER=ovh` on every `make` (
 
    ```bash
    export PROVIDER=ovh
-   make init      # once per checkout
    make apply     # orders or imports the VPS, reinstalls it: Debian, Docker, the stack
    make secret    # the service-account token, over SSH: the public address the first time
    make pair
