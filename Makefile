@@ -137,6 +137,7 @@ else
 	@echo "a GCP host has no public SSH: nothing to close"
 endif
 
+# The host is the one TFVARS names, its state too: init again against its prefix, whatever the last `make init` was.
 # The data disk is `prevent_destroy`, so no plan deletes it by accident: it leaves the state first, and gcloud deletes
 # it, then its snapshots. Asks once, for the host's name; every step after skips what is already gone, so a destroy
 # stopped halfway is run again. The tailnet node is logged out when the host answers, else removed in the Tailscale
@@ -145,7 +146,9 @@ destroy:            ## GCP: the host for good, its data disk and snapshots inclu
 ifeq ($(PROVIDER),ovh)
 	@echo "an OVH VPS is terminated in the OVH control panel"; exit 1
 else
-	@read -p "type $(NAME) to delete it, its data disk and its snapshots: " n; [ "$$n" = "$(NAME)" ]
+	@[ -n "$(NAME)" ] || { echo "no name in $(TFVARS): TFVARS names the host's file"; exit 1; }
+	@read -p "type $(NAME) to delete it ($(PROJECT), $(ZONE)), its data disk and its snapshots: " n; [ "$$n" = "$(NAME)" ]
+	$(TF) init -reconfigure -backend-config=bucket=$(BUCKET) -backend-config=prefix=orca-host/$(NAME) >/dev/null
 	-$(SSH) -o ConnectTimeout=10 core@$(NAME) 'sudo docker exec tailscale tailscale logout'
 	if $(TF) state list | grep -qx google_compute_region_disk.data; then \
 	  $(TF) state rm google_compute_region_disk.data; fi
