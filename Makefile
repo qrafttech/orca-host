@@ -105,7 +105,7 @@ BOOTSTRAP_SSH = $(if $(filter ovh,$(PROVIDER)),$(SSH) -o ConnectTimeout=10 core@
 secret:             ## the service-account token, from 1Password, to the host
 	token=$$(op read "$(OP_TOKEN)" | tr -d '\r\n'); [ -n "$$token" ] || exit 1; \
 	$(if $(filter ovh,$(PROVIDER)),ip=$$($(TF) output -raw ipv4 </dev/null); \
-	  [ -n "$$ip" ] || { echo "no address for $(NAME): make init, make apply"; exit 1; };) \
+	  [ -n "$$ip" ] || { echo "no address for $(NAME): make init and make apply"; exit 1; };) \
 	printf '%s' "$$token" | $(SSH) -o ConnectTimeout=10 core@$(NAME) "$(WRITE_TOKEN)" \
 	  || printf '%s' "$$token" | $(BOOTSTRAP_SSH) "$(WRITE_TOKEN)"
 
