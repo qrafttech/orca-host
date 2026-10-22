@@ -1,6 +1,6 @@
 # orca-host
 
-A headless [Orca](https://github.com/stablyai/orca) server on a GCP VM, used from the desktop and mobile Orca clients over the tailnet. One host per person, all of their projects on it. How it works and why: [`.claude/knowledge/`](.claude/knowledge/).
+A headless [Orca](https://github.com/stablyai/orca) server on a Debian VM, on GCP or an OVH VPS, used from the desktop and mobile Orca clients over the tailnet. One host per person, all of their projects on it. How it works and why: [`.claude/knowledge/`](.claude/knowledge/).
 
 <img src="docs/architecture.svg" alt="The Orca clients reach the VM over the tailnet; in the VM, a tailscale container carries the address and an orca-host container runs orca serve; project stacks are sibling containers on the VM's Docker; a data disk holds the home, the Tailscale identity, Docker's images and volumes, and the env file, rendered from 1Password at every boot">
 
@@ -52,11 +52,11 @@ Needed on the laptop: `docker`, `terraform`, `gcloud`, `op` (1Password CLI), `jq
 
    ```bash
    make apply     # VPC, data disk, a Debian VM made into the host at its first boot
-   make secret    # the service-account token, over SSH (IAP until the host is on the tailnet)
+   make secret    # the service-account token, over SSH (IAP until the host is on the tailnet); a minute after apply
    make pair      # the desktop client, then the phone (Tailscale on, same tailnet)
    ```
 
-   Then, in the desktop app: Settings → Remote Orca Servers → Advanced → Active Server.
+   Then, in the desktop app: Settings → Remote Orca Servers → Advanced → Active Server. A terminal that opens is a host that works.
 
 ## On an OVH VPS
 
@@ -75,7 +75,7 @@ The same host on an OVH VPS, Debian underneath. `PROVIDER=ovh` on every `make` (
    make lockdown  # SSH on the tailnet only
    ```
 
-`make apply` reinstalls the VPS: what is on it goes.
+The first `make apply` reinstalls the VPS: what was on it goes.
 
 ## Projects
 
@@ -152,7 +152,18 @@ make ssh       # a shell on the VM
 make destroy   # GCP: the host for good, its data disk, snapshots and state included; asks for its name
 ```
 
+A host offline at `make destroy` stays listed in Tailscale: remove it in the admin console (Machines), else a new host of that name joins as `<name>-1`. A new host needs a new Tailscale key in the item `TS_AUTHKEY` reads.
+
 The data disk fills with live worktrees: `docker system df` from `make shell` says what takes it, `docker system prune` gives back an image built by hand.
+
+## When a command fails
+
+| Message | What to do |
+|---|---|
+| `invalid_grant` … `invalid_rapt` (Terraform) | `gcloud auth application-default login`, then the command again |
+| `Reauthentication required` (gcloud) | your password at the prompt; a command it stopped, run again |
+| `Failed to lookup instance` (`make secret`, GCP) | the VM is still booting: a minute later, again |
+| `no name in …` | `TFVARS` points at no host's file: `export TFVARS=<your file>` |
 
 ## Develop
 
