@@ -124,7 +124,7 @@ Say you want Claude to read Notion and Slack. It takes three things:
 
    Push, then `make restart`.
 
-To follow the updates of this base image too, turn on Dependabot for Docker in your image's repository.
+To follow this base image without thinking about it, copy the two files of [`docs/your-image/`](docs/your-image/) into your image's repository: Dependabot opens a pull request each time the base moves, and `base-bump.yml` merges it once your CI has built and checked the image, then rebuilds `main`. Your host picks it up within five minutes.
 
 ## Claude settings
 
