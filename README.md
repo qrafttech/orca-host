@@ -9,9 +9,6 @@ Your own [Orca](https://github.com/stablyai/orca) server in the cloud: a Debian 
 On the laptop: `docker`, `terraform`, `gcloud`, `op` (1Password CLI), `jq`, `ssh`, `qrencode`, the Orca desktop CLI.
 
 1. **Tailscale**, once per tailnet: a tag `orca-host`, owner `autogroup:admin` (admin console → Access controls → Tags).
-
-   <img src="docs/tailscale-tag.png" width="49%" alt="Create tag">
-
 2. **1Password**, once: a vault for the host, with the tokens your agents use and no passwords. A service account on it, read-only; its token in an item `orca-host-op-token` of that vault.
 3. **Google Cloud**, once per project: `gcloud auth application-default login`, then `make bootstrap` (the bucket that keeps Terraform's state).
 4. **Two files of yours**, no secret in either. Keep them in a repository of yours and tell `make` where they are:
@@ -36,8 +33,6 @@ On the laptop: `docker`, `terraform`, `gcloud`, `op` (1Password CLI), `jq`, `ssh
    FOO_TOKEN={{ op://Vault/foo/token }}
    ```
 
-   <img src="docs/tailscale-auth-key.png" width="49%" alt="Generate auth key"> <img src="docs/github-token.png" width="49%" alt="Token scopes">
-
 5. **The host**:
 
    ```sh
@@ -60,34 +55,21 @@ The same steps, with `export PROVIDER=ovh` and a `TFVARS` from `terraform/ovh/te
 
 In the app: Add a project → Clone from URL, the https URL, parent folder `/home/orca`.
 
-<img src="docs/orca-add-project.png" width="49%" alt="Add a project"> <img src="docs/orca-clone-from-url.png" width="49%" alt="Clone from URL">
-
 A project starts itself from its worktree setup hook (`docker compose`, `op inject -i .env.tpl -o .env`). What it starts is at `http://<tailnet IP>:<port>`. A deleted worktree is cleaned up within 5 minutes.
 
 ## Day to day
 
-| Command | Does |
+| To | Run |
 |---|---|
-| `make restart` | takes your changes now; ends live terminals |
-| `make logs` | the host's logs |
-| `make shell` | a shell as an Orca terminal sees it |
-| `make ssh` | a shell on the VM |
-| `make destroy` | GCP: deletes the host for good, disk and state included; asks for its name |
+| take a change of `.env.tpl`, a token in 1Password, your settings repository | `make restart` |
+| take a change of `orca_image`, `compose.yaml` or `host/` | `make rebuild` |
+| renew the 1Password token, once expired | a new token in its item, then `make secret` and `make restart` |
+| move to the disk's other zone, when the VM's is out of stock (GCP) | the other of `data_disk_zones` as `zone`, then `make apply` |
+| read the host's logs | `make logs` |
+| open a shell, as an Orca terminal sees it / on the VM | `make shell` / `make ssh` |
+| delete the host for good, disk and state included (GCP) | `make destroy`; it asks for the name |
 
-After `make destroy`, a host that was offline stays in Tailscale: remove it in the admin console (Machines), or a new host of that name joins as `<name>-1`.
-
-## When you change something
-
-| You changed | You do |
-|---|---|
-| this repository, merged to `main` | nothing if the host runs the base image; else merge Dependabot's pull request in yours |
-| your own image, merged to its `main` | nothing: the host redeploys within five minutes |
-| a token in 1Password, `.env.tpl`, your settings repository | `make restart` |
-| `orca_image`, `compose.yaml`, `host/` | `make rebuild` |
-| `zone`, to the other of `data_disk_zones` (the zone is out of stock, or down) | `make apply` |
-| nothing, but the service-account token expired | a new token in its item, `make secret`, `make restart` |
-
-Each ends live terminals and keeps the data disk: checkouts, pairing, Docker images and volumes.
+A merge here, or to your own image, reaches the host by itself within five minutes. `restart` and `rebuild` end live terminals and keep the data disk: checkouts, pairing, Docker images and volumes. After `make destroy`, a host that was offline stays in Tailscale: remove it in the admin console (Machines), or a new host of that name joins as `<name>-1`.
 
 ## When a command fails
 

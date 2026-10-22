@@ -180,7 +180,7 @@ Host <name>
 
 ## Restart or rebuild
 
-Three ways a change reaches the host; the README, "When you change something", says which one each change takes.
+Three ways a change reaches the host; the README, "Day to day", says which one each change takes.
 
 - **Redeploy**: the host sees a new image under the tag it follows and restarts its container on it. The env file is rendered again first, since a new image may carry a new `/etc/orca-host/env.tpl`.
 - **Restart** (`make restart`): the laptop's templates copied to the host, one removed there removed, the env file rendered again from them and 1Password, the image pulled, the container restarted even when neither changed, so the entrypoint pulls the settings repository again.
