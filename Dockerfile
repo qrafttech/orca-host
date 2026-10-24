@@ -5,7 +5,7 @@
 
 # Renovate bumps every pin below (renovate.json). Those it cannot infer name their source.
 # renovate: datasource=github-releases depName=stablyai/orca
-ARG ORCA_VERSION=1.4.237
+ARG ORCA_VERSION=1.4.239
 # renovate: datasource=npm depName=@anthropic-ai/claude-code
 ARG CLAUDE_CODE_VERSION=2.1.308
 # renovate: datasource=github-releases depName=cli/cli
