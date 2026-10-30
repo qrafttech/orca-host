@@ -7,9 +7,9 @@
 # renovate: datasource=github-releases depName=stablyai/orca
 ARG ORCA_VERSION=1.4.245
 # renovate: datasource=npm depName=@anthropic-ai/claude-code
-ARG CLAUDE_CODE_VERSION=2.1.308
+ARG CLAUDE_CODE_VERSION=2.1.314
 # renovate: datasource=github-releases depName=cli/cli
-ARG GH_VERSION=2.103.0
+ARG GH_VERSION=2.103.3
 ARG DOCKER_VERSION=29.8.1
 # Also pinned in host/render-env, which renders the env file with the same CLI before this
 # image is pulled. Two independent pins: the VM's copy must work even when this image does not.
