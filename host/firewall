@@ -1,0 +1,40 @@
+#!/bin/sh
+# Runs on a Debian host, as root: at install, and from `make lockdown`. Writes /etc/nftables.conf and loads it.
+# Its own table, never `flush ruleset`: Docker's rules live beside it and stay.
+# In: loopback, replies, the tailnet, Docker's bridges (a container reaching the host), ICMP, DHCP, Tailscale's
+# UDP port for direct connections, and SSH on the public interface until /var/lib/orca/lockdown exists.
+# Forward: a container is reached from the tailnet or another container, never by a new connection from the
+# public interface — a project's `ports:` publishes on 0.0.0.0, and that must not reach the internet.
+set -eu
+ssh='tcp dport 22 accept'
+[ ! -f /var/lib/orca/lockdown ] || ssh='# SSH: tailnet only (/var/lib/orca/lockdown)'
+cat > /etc/nftables.conf <<NFT
+#!/usr/sbin/nft -f
+# Written by /opt/orca/firewall: edit that, not this.
+table inet orca
+delete table inet orca
+table inet orca {
+  chain input {
+    type filter hook input priority filter; policy drop;
+    iif lo accept
+    ct state established,related accept
+    ct state invalid drop
+    iifname "tailscale0" accept
+    iifname "docker0" accept
+    iifname "br-*" accept
+    meta l4proto { icmp, ipv6-icmp } accept
+    udp dport { 68, 546 } accept
+    udp dport 41641 accept
+    $ssh
+  }
+  chain forward {
+    type filter hook forward priority filter; policy accept;
+    ct state established,related accept
+    iifname "tailscale0" accept
+    iifname "docker0" accept
+    iifname "br-*" accept
+    ct state new drop
+  }
+}
+NFT
+nft -f /etc/nftables.conf

@@ -1,0 +1,12 @@
+#!/bin/sh
+# Runs on a Debian host, as root, from orca.service: starts, or updates, the stack. Needs Docker with the compose
+# plugin, and TS_HOSTNAME, ORCA_DATA, ORCA_IMAGE, ORCA_ENV_FILE from /opt/orca/host.env.
+# ORCA_IMAGE is public: no registry login here.
+# A new image may carry a new /etc/orca-host/env.tpl: the env file is rendered again before compose
+# reads it, and compose then runs the image it was rendered from (`--pull missing`, not `always`).
+set -eu
+docker pull -q "$ORCA_IMAGE" >/dev/null
+[ "$(docker image inspect -f '{{.Id}}' "$ORCA_IMAGE")" = "$(cat /var/lib/orca/env.image 2>/dev/null)" ] \
+  || /opt/orca/render-env
+cd /opt/orca
+exec docker compose --env-file /var/lib/orca/env up -d --pull missing --remove-orphans

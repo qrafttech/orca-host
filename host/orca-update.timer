@@ -1,0 +1,9 @@
+[Unit]
+Description=orca-host: check for a new image every 5 minutes
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=5min
+
+[Install]
+WantedBy=timers.target

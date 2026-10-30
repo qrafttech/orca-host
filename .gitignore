@@ -1,9 +1,13 @@
 # per-person values and local state
-terraform/terraform.tfvars
-terraform/.terraform/
-terraform/*.tfstate*
+terraform/**/terraform.tfvars
+.env.tpl
+.env.*.tpl
+.terraform/
+*.tfstate*
 # the env file rendered by `make env`
 env
 # laptop compose state
 data/
 .pairing-url
+# files dropped into an Orca pane
+.orca/drops/

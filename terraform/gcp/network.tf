@@ -15,8 +15,8 @@ resource "google_compute_subnetwork" "subnet" {
 }
 
 # Break-glass when Tailscale is down: SSH from Google's IAP range only, i.e. `gcloud compute ssh --tunnel-through-iap`,
-# which needs an IAM identity of the project and OS Login (enabled by Flatcar's GCE image). Not reachable from
-# the internet: the IAP range is Google's.
+# which needs an IAM identity of the project and OS Login (`enable-oslogin` in vm.tf). Also the way in for the first
+# `make secret`, before the host is on the tailnet. Not reachable from the internet: the IAP range is Google's.
 resource "google_compute_firewall" "iap_ssh" {
   name          = "${var.name}-iap-ssh"
   network       = google_compute_network.vpc.id

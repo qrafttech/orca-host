@@ -15,10 +15,24 @@ jobs:
       - uses: hadolint/hadolint-action@v3.1.0
         with:
           dockerfile: Dockerfile
-      - run: shellcheck entrypoint.sh prune-stacks.sh
+      - run: shellcheck entrypoint.sh prune-stacks.sh inject-env.sh && shellcheck -s sh host/render-env host/up host/firewall
       - uses: hashicorp/setup-terraform@v3
-      - run: terraform -chdir=terraform fmt -check -diff
-      - run: terraform -chdir=terraform init -backend=false && terraform -chdir=terraform validate
+      - run: terraform fmt -check -diff -recursive terraform && terraform fmt -check -diff -recursive test
+      - run: for d in terraform/gcp terraform/ovh; do terraform -chdir=$d init -backend=false && terraform -chdir=$d validate || exit 1; done
+      # the first-boot script as a VM runs it, every branch of its template rendered
+      - run: |
+          terraform -chdir=test/first-boot init && terraform -chdir=test/first-boot apply -auto-approve
+          terraform -chdir=test/first-boot output -raw script > first-boot.sh
+          shellcheck first-boot.sh
+      # the firewall as the script writes it, open then locked down, checked by nft without loading it
+      - run: |
+          for lockdown in no yes; do
+            docker run --rm --cap-add NET_ADMIN -e DEBIAN_FRONTEND=noninteractive -e LOCKDOWN=$lockdown -v "$PWD/host/firewall:/firewall:ro" debian:13 sh -c '
+              apt-get update -qq && apt-get install -y -qq nftables >/dev/null
+              printf "#!/bin/sh\nexec /usr/sbin/nft -c \"\$@\"\n" > /usr/local/bin/nft && chmod +x /usr/local/bin/nft
+              mkdir -p /var/lib/orca && [ "$LOCKDOWN" = no ] || touch /var/lib/orca/lockdown
+              sh /firewall' || exit 1
+          done
 
   image:
     runs-on: ubuntu-latest
@@ -51,17 +65,22 @@ jobs:
           cache-to: type=gha,mode=max
       - name: smoke test — the ready contract, as upstream tests it, and a deleted worktree's stack torn down
         run: |
-          # a compose stack started from a directory under /home/orca that no longer exists: gone once the server is up
+          # a compose stack started from a directory under /home/orca that no longer exists, one of its images built by
+          # compose: gone, image included, once the server is up
           sudo install -d -o "$USER" /home/orca/ghost
-          printf 'services:\n  s: {image: alpine:3.20, command: sleep infinity, stop_grace_period: 1s, volumes: [data:/data]}\nvolumes:\n  data:\n' > /home/orca/ghost/compose.yaml
-          docker compose -f /home/orca/ghost/compose.yaml up -d && sudo rm -rf /home/orca/ghost
+          printf 'FROM alpine:3.20\nRUN touch /built\n' > /home/orca/ghost/Dockerfile
+          printf 'services:\n  s: {build: ., command: sleep infinity, stop_grace_period: 1s, volumes: [data:/data]}\nvolumes:\n  data:\n' > /home/orca/ghost/compose.yaml
+          # with the image's compose, as from an Orca terminal: it labels the images it builds with their project, which
+          # is how `down --rmi local` finds them with no compose file
+          docker run --rm --entrypoint docker -v /var/run/docker.sock:/var/run/docker.sock -v /home/orca:/home/orca ${{ env.IMAGE }}:smoke \
+            compose -f /home/orca/ghost/compose.yaml up -d --build && sudo rm -rf /home/orca/ghost
           docker run -d --name smoke -e PAIRING_ADDRESS=127.0.0.1 -v /var/run/docker.sock:/var/run/docker.sock ${{ env.IMAGE }}:smoke
           for i in $(seq 1 24); do
             sleep 5
             if docker logs smoke 2>/dev/null | jq -Rr 'fromjson? | select(.type=="orca_server_ready" and .schemaVersion==1) | .type' | grep -q .; then
               echo "ready after $((i*5))s"; docker exec -u orca smoke docker version --format 'docker {{.Server.Version}} from the container'
               docker logs smoke 2>&1 | grep '^prune-stacks: ghost torn down'
-              left=$(docker ps -a --filter label=com.docker.compose.project=ghost --format '{{.Names}}'; docker volume ls --filter label=com.docker.compose.project=ghost --format '{{.Name}}')
+              left=$(docker ps -a --filter label=com.docker.compose.project=ghost --format '{{.Names}}'; docker volume ls --filter label=com.docker.compose.project=ghost --format '{{.Name}}'; docker image ls -q ghost-s)
               [ -z "$left" ] || { echo "ghost stack left behind: $left"; exit 1; }
               exit 0
             fi

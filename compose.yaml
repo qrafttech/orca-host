@@ -1,5 +1,5 @@
 # orca-host stack: Tailscale + Orca, both on the host's network. Everything personal comes from one env file,
-# read twice: by compose for the values below (`:?` = required, `:-` = default), and by the orca-host container
+# resolved from .env.tpl (README, Install), read twice: by compose for the values below (`:?` = required, `:-` = default), and by the orca-host container
 # as a whole, so a new variable needs no change here.
 #   ORCA_ENV_FILE=<file> docker compose --env-file <file> up -d
 # The variables below are the contract of a host.
@@ -9,8 +9,8 @@
 #   CLAUDE_CODE_OAUTH_TOKEN  from `claude setup-token`
 #   GH_TOKEN                 classic GitHub token, `repo` + `read:org` — the only GitHub credential on the host
 #   GIT_AUTHOR_NAME / GIT_AUTHOR_EMAIL   git identity, also used as committer
-#   OP_SERVICE_ACCOUNT_TOKEN the token the VM rendered this file with, handed on to the sessions (set by the VM's
-#                            unit). `op` is in the image, so a project whose .env lives in 1Password is set up from
+#   OP_SERVICE_ACCOUNT_TOKEN the token the VM rendered this file with, handed on to the sessions (appended by the
+#                            VM's render-env). `op` is in the image, so a project whose .env lives in 1Password is set up from
 #                            a session. Every session, and everything it runs, reads that one read-only vault.
 #   CLAUDE_PERMISSION_MODE   optional: default | acceptEdits | auto | plan, the permission mode of Claude panes
 #   CLAUDE_SETTINGS_REPO     optional: <owner>/<repo> holding your Claude settings; CLAUDE_SETTINGS_FILE the path
@@ -22,6 +22,8 @@
 #   ORCA_IMAGE               the image to run, a full reference: the published base, or your own image built
 #                            FROM it to add your tools (set by the VM's unit)
 #   PAIRING_ADDRESS          only on a laptop, see compose.laptop.yaml
+#   OP_SERVICE_ACCOUNT_TOKEN_<NAME>  optional: the token of another 1Password account's service account, which
+#                            resolves .env.<name>.tpl (README, Several 1Password accounts); handed on to the sessions too
 #   TS2_AUTHKEY              optional, with COMPOSE_PROFILES=tailnet2: auth key of a second tailnet, tagged like
 #                            TS_AUTHKEY. Reached through a SOCKS5 proxy on 127.0.0.1:1055, see tailscale-2 below.
 #   anything else            reaches the orca-host container as is: the `${VAR}` of your config/mcp.json, what
@@ -29,7 +31,7 @@
 
 services:
   tailscale:
-    image: tailscale/tailscale:v1.102.4
+    image: tailscale/tailscale:v1.104.2
     container_name: tailscale
     network_mode: host
     cap_add: [NET_ADMIN]
@@ -48,7 +50,7 @@ services:
   # same fd7a:115c:a1e0::/48 range, so the second cannot be an interface. Sessions reach it through its SOCKS5 proxy;
   # --accept-routes takes its subnet routes, --port=0 keeps it off the first one's UDP port.
   tailscale-2:
-    image: tailscale/tailscale:v1.102.4
+    image: tailscale/tailscale:v1.104.2
     container_name: tailscale-2
     profiles: [tailnet2]
     network_mode: host

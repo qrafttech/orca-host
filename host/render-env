@@ -1,0 +1,36 @@
+#!/bin/sh
+# Runs on a Debian host, as root, from orca-env.service: writes /var/lib/orca/env, the file the stack starts from,
+# before any container exists. Needs Docker, /opt/orca/inject-env, and ORCA_IMAGE from /opt/orca/host.env.
+# The templates are .env.tpl and one .env.<name>.tpl per extra 1Password account, `VAR=value` per line, a secret as
+# a {{ op:// }} reference: first the image's /etc/orca-host/env*.tpl (a derived image COPYs them there), then
+# /opt/orca/env*.tpl (from the laptop), all optional; a variable set in both takes the local value. inject-env
+# resolves them: env.tpl with the token below, each env.<name>.tpl with the OP_SERVICE_ACCOUNT_TOKEN_<NAME> env.tpl
+# yields. /var/lib/orca/op-token holds one line, a 1Password service-account token, put there by `make secret`.
+# Rotate a token in 1Password, restart this unit: that is the whole point. op runs from its own image, as the
+# rest of the host does. The token itself goes into the file too, so the sessions' own `op` reads the
+# same vault. /var/lib/orca/env.image records the image rendered from: `up` renders again when it moves.
+# Retries until the token is there: `make secret` comes after the install.
+set -eu
+image="$ORCA_IMAGE"
+docker pull -q "$image" >/dev/null
+img=$(mktemp -d)
+trap 'rm -rf "$img"' EXIT
+# the image's templates, if any: a missing /etc/orca-host is no error
+cid=$(docker create "$image")
+docker cp "$cid:/etc/orca-host/." "$img/" >/dev/null 2>&1 || true
+docker rm "$cid" >/dev/null
+until [ -s /var/lib/orca/op-token ]; do
+  echo "no /var/lib/orca/op-token yet (make secret), retrying in 15s"
+  sleep 15
+done
+# a token pasted by hand may carry a newline; op wants the value alone
+OP_SERVICE_ACCOUNT_TOKEN=$(tr -d '\r\n' < /var/lib/orca/op-token)
+export OP_SERVICE_ACCOUNT_TOKEN
+# Failing is the point — the stack must not come up on the env file of the last boot, nor on part of
+# its environment. `make secret` is the way back.
+rendered=$(OP_INJECT="docker run --rm -i -e OP_SERVICE_ACCOUNT_TOKEN 1password/op:2.41.1 op inject" \
+  /opt/orca/inject-env "$img"/*.tpl /opt/orca/*.tpl)
+umask 077
+printf '%s\nOP_SERVICE_ACCOUNT_TOKEN=%s\n' "$rendered" "$OP_SERVICE_ACCOUNT_TOKEN" > /var/lib/orca/env.tmp
+mv /var/lib/orca/env.tmp /var/lib/orca/env
+docker image inspect -f '{{.Id}}' "$image" > /var/lib/orca/env.image

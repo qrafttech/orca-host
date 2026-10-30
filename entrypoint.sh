@@ -50,16 +50,16 @@ if [ -n "${CLAUDE_SETTINGS_REPO:-}" ]; then
   [ ! -f "$file" ] || settings --slurpfile s "$file" '.permissions = $s[0].permissions'
   [ -e .claude/CLAUDE.md ] || [ ! -f "$repo/CLAUDE.md" ] || ln -s "$repo/CLAUDE.md" .claude/CLAUDE.md
   [ -e .claude/skills ] || [ ! -d "$repo/.claude/skills" ] || ln -s "$repo/.claude/skills" .claude/skills
-  # User-level MCP servers (config/mcp.json in the settings repo): merged in, never overwriting a server
-  # already present (manually added, or from a previous merge with local edits).
+  # User-level MCP servers: exactly those of config/mcp.json in the settings repo, replaced at every start.
   mcpfile="$repo/config/mcp.json"
   if [ -f "$mcpfile" ]; then
-    jq --slurpfile m "$mcpfile" '.mcpServers = (($m[0].mcpServers // {}) + (.mcpServers // {}))' \
+    jq --slurpfile m "$mcpfile" '.mcpServers = ($m[0].mcpServers // {})' \
       .claude.json > .claude.json.tmp && mv .claude.json.tmp .claude.json
   fi
 fi
 
-# The stacks of deleted worktrees, torn down within 5 minutes, volumes included: see prune-stacks. Orca does not
+# The stacks of deleted worktrees, torn down within 5 minutes, volumes and built images included, and the build cache
+# capped: see prune-stacks. Orca does not
 # tell the host about a delete, so a loop, for as long as the container runs.
 (while :; do prune-stacks || true; sleep 300; done) &
 

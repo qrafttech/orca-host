@@ -1,0 +1,17 @@
+[Unit]
+Description=orca-host: the compose stack
+After=docker.service orca-env.service
+Requires=docker.service orca-env.service
+RequiresMountsFor=/var/lib/orca
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+EnvironmentFile=/opt/orca/host.env
+ExecStart=/opt/orca/up
+ExecStartPost=-/usr/bin/docker image prune -f
+StandardOutput=journal+console
+StandardError=journal+console
+
+[Install]
+WantedBy=multi-user.target

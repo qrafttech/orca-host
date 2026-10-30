@@ -5,21 +5,21 @@ A VM that runs `orca serve` headless, one host per person, all of that person's 
 ## Rules of this repository
 
 - **English only**, everywhere: README, script comments, commit messages, pull requests, issues, and anything an agent writes into GitHub — issue bodies and comments, pull request descriptions, review comments on code. Source material that arrives in French (a pasted message, call notes) is translated on the way in.
-- **The host is generic.** Nothing in `Dockerfile`, `compose.yaml` or `terraform/` knows a project. What a project needs on a worktree (`orca.yaml`, worktree scripts, `.env` files, base images) lives in that project's repository and runs from its setup hook.
+- **The host is generic.** Nothing in `Dockerfile`, `compose.yaml`, `host/` or `terraform/` knows a project. What a project needs on a worktree (`orca.yaml`, worktree scripts, `.env` files, base images) lives in that project's repository and runs from its setup hook.
 - **Nothing is installed at run time.** The image is a base; a person's own tools are their own image, `FROM` it, built by their own CI and named in `orca_image`. No mechanism here downloads, unpacks or installs software after the build — not even a generic one that names no tool.
-- **What must survive a rebuild is under `/var/lib/orca`**, Docker's data root included. The boot disk is Flatcar and nothing else; it is replaced with the VM. A project's databases are worktree databases: its setup hook creates them, its archive script removes them, nothing migrates them.
-- **No secrets, no per-person values in the tree.** Tokens (`TS_AUTHKEY`, `GH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`), git identity and `.env` contents come in as environment variables at run time, from one 1Password note the host renders at every boot. The tree holds the *shape* of that note — variable names, in `compose.yaml` — never a value.
+- **What must survive a rebuild is under `/var/lib/orca`**, Docker's data root included. The boot disk is Debian and what `host/first-boot.sh.tftpl` puts there; it is replaced with the VM. A project's databases are worktree databases: its setup hook creates them, its archive script removes them, nothing migrates them.
+- **No secrets, no per-person values in the tree.** Tokens (`TS_AUTHKEY`, `GH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`), git identity and `.env` contents come in as environment variables at run time, from a `.env.tpl` the person keeps in their own repository (or image), its secrets as `{{ op:// }}` references the host resolves at every boot. The tree holds the *shape* of that file — variable names, in `compose.yaml` — never a value.
 - **Everything is declarative and idempotent**: a file says at the top where it runs and what it needs; applying it twice changes nothing.
 - **Plain facts, no state, no history.** The README says what a host is and how one is brought up, not what was done on which day, on which machine, for which project. No dates, no IPs, no IDs, no project or client names, no reference to other repositories or issues. What happened lives in the git log and in the issue trackers of the projects that use the host.
 - **The README is the quickstart**, for a person: short, the steps and the commands. How it works and why goes to `.claude/knowledge/` (table below), not to the README.
 - **The table at the end of this file is the specification.** Every step is marked *script* or *by hand*; the goal is that every *by hand* row becomes a *script* row. A new manual step is added to the table before it is automated, not after.
-- **Pinned versions.** Orca is pinned to the desktop client's version (protocol compatibility); Claude Code is pinned. A bump is a commit that says why.
+- **Pinned versions, bumped by Renovate.** Every version is pinned; Renovate opens the pull requests, grouped, their release notes the why. Orca follows its latest release, because the desktop and mobile clients update themselves and the mobile app refuses an older host. A pin Renovate cannot infer carries a `# renovate:` comment naming its source.
 
 ## Knowledge base
 
 | File | Covers |
 |---|---|
-| [architecture.md](.claude/knowledge/architecture.md) | where things run, image and derived images, entrypoint, CI, stack, VM and Ignition, network, disks and sizing, restart vs rebuild, pairing, GitHub token, workspace trust |
+| [architecture.md](.claude/knowledge/architecture.md) | the three layers; the image and your own image; the stack; the VM (first-boot script, disks, state); secrets; providers compared; how a change reaches the host; worktree sweep, pairing, GitHub token, host keys, workspace trust |
 | [claude-settings.md](.claude/knowledge/claude-settings.md) | `CLAUDE_PERMISSION_MODE`, the settings repository, `config/mcp.json` |
 
 ## Setup steps: script or by hand
@@ -27,16 +27,22 @@ A VM that runs `orca serve` headless, one host per person, all of that person's 
 | Step | Today | Target |
 |---|---|---|
 | Tailscale tag | admin console, once per tailnet | — |
-| host name, project, zone, SSH key | laptop, into the Secure Note `orca-host-tfvars` | — |
+| host name, project, zone, SSH key | `terraform/<provider>/terraform.tfvars` gitignored here, or a file in the person's repository named by `TFVARS` | — |
 | the 1Password vault the host reads: technical, the tokens agents use, no password data | 1Password, once | — |
 | a service account on that vault, read-only, and its token in an item of it | 1Password admin console, once | — |
-| Tailscale auth key | admin console, into the Secure Note | Tailscale API, into the item the note references |
-| Claude token, GitHub token, git identity | laptop, into the Secure Note | — |
-| the tokens your MCP servers and your own tools read | laptop, into the Secure Note, as `{{ op:// }}` references to their own items | — |
+| Tailscale auth key | admin console, into a 1Password item `.env.tpl` references | Tailscale API, into that item |
+| a second tailnet, optional: its tag `orca-host`, an auth key with that tag, and access for the tag | that tailnet's admin console; the key into a 1Password item `TS2_AUTHKEY` references | Tailscale API, into that item |
+| Claude token, GitHub token, git identity | the tokens into 1Password items, `.env.tpl` references them; the identity in `.env.tpl` | — |
+| the tokens your MCP servers and your own tools read | 1Password items, referenced from `.env.tpl` | — |
+| another 1Password account: a service account on its vault, read-only, its token in an item of the host's vault | 1Password admin console, once per account; `.env.<name>.tpl` references its items | — |
 | state bucket | `make bootstrap` | — |
-| the service-account token into Secret Manager | `make secret` | — |
+| OVH VPS: the order | `make apply`, or the OVH control panel and `service_name` | — |
+| OVH API credentials (`endpoint`, `application_key`, `application_secret`, `consumer_key`) | createtoken page, into a 1Password item `ovh-api` | — |
+| OVH: SSH off the public address | `make lockdown`, after `make pair` | in the install, once the token is there |
+| the service-account token onto the host, `/var/lib/orca/op-token` | `make secret` | — |
 | renewing that token when it expires | 1Password, then `make secret` and `make restart` | a reminder before the expiry |
 | pairing | `make pair` | from the Orca client |
 | mobile pairing | `make pair`, QR on the laptop | from the desktop client |
 | first clone of a project | the app, Clone from URL | — |
 | Claude Code workspace trust | first Claude pane of a project, once, covers its worktrees — as on a laptop | — |
+| deleting a host | `make destroy` on GCP; on OVH, the control panel, confirmed by email | — |

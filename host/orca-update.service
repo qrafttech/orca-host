@@ -1,0 +1,13 @@
+# A merge to main publishes a new image under the tag this host follows, and nothing on the VM would know.
+# The check is the redeploy: `/opt/orca/up` pulls the tag, and compose recreates a container only when
+# the digest it pulled differs from the running one. A tick with nothing new is a manifest request and no more.
+[Unit]
+Description=orca-host: redeploy when a new image is published under the tag this host follows
+After=docker.service orca.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/systemctl restart orca.service
+StandardOutput=journal+console
+StandardError=journal+console

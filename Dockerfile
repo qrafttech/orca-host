@@ -1,14 +1,19 @@
 # syntax=docker/dockerfile:1
-# orca-host — `orca serve` headless, with the tools an Orca worktree needs: claude, gh, git, docker CLI + compose, op.
+# orca-host — `orca serve` headless, with the tools an Orca worktree needs: claude, gh, git, docker CLI + compose + buildx, op.
 # Built for amd64 and arm64. State is not in the image: /home/orca is a volume, see compose.yaml.
+# No /etc/orca-host/env*.tpl here: a derived image COPYs its own, the host reads them at boot (README).
 
-ARG ORCA_VERSION=1.4.205
-ARG CLAUDE_CODE_VERSION=2.1.282
-ARG GH_VERSION=2.101.0
+# Renovate bumps every pin below (renovate.json). Those it cannot infer name their source.
+# renovate: datasource=github-releases depName=stablyai/orca
+ARG ORCA_VERSION=1.4.237
+# renovate: datasource=npm depName=@anthropic-ai/claude-code
+ARG CLAUDE_CODE_VERSION=2.1.308
+# renovate: datasource=github-releases depName=cli/cli
+ARG GH_VERSION=2.103.0
 ARG DOCKER_VERSION=29.8.1
-# Also pinned in terraform/ignition.yaml.tftpl, which renders the env file with the same CLI before this
+# Also pinned in host/render-env, which renders the env file with the same CLI before this
 # image is pulled. Two independent pins: the VM's copy must work even when this image does not.
-ARG OP_VERSION=2.39.0
+ARG OP_VERSION=2.41.1
 
 # --- Orca: the official AppImage, extracted once (no FUSE in a container) ---------------------------------
 # An AppImage is an ELF runtime with a squashfs appended: unsquashfs at the runtime's size extracts it without
@@ -48,7 +53,7 @@ RUN curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_$
     | tar -xz -C /tmp \
  && install -m 755 "/tmp/gh_${GH_VERSION}_linux_${TARGETARCH}/bin/gh" /usr/local/bin/gh
 
-# --- docker CLI + compose plugin, static binaries from the official image ------------------------------------
+# --- docker CLI + compose and buildx plugins, static binaries from the official image -------------------------
 FROM docker:${DOCKER_VERSION}-cli AS docker-cli
 
 # --- op: the 1Password CLI, the static binary from the official image -----------------------------------------
@@ -75,6 +80,7 @@ COPY --from=claude /opt/claude /opt/claude
 COPY --from=gh /usr/local/bin/gh /usr/local/bin/gh
 COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
 COPY --from=docker-cli /usr/local/libexec/docker/cli-plugins/docker-compose /usr/local/libexec/docker/cli-plugins/docker-compose
+COPY --from=docker-cli /usr/local/libexec/docker/cli-plugins/docker-buildx /usr/local/libexec/docker/cli-plugins/docker-buildx
 COPY --from=op /usr/local/bin/op /usr/local/bin/op
 
 RUN useradd --create-home --shell /bin/bash orca \

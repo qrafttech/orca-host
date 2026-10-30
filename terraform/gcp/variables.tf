@@ -1,0 +1,69 @@
+variable "name" {
+  description = "Host name: the VM, its disk, its name on the tailnet."
+  type        = string
+}
+
+variable "project" {
+  description = "GCP project id."
+  type        = string
+}
+
+variable "op_vault" {
+  description = "The 1Password vault the host reads: a technical vault, holding the tokens agents read and no password data. The host's service account is scoped to this one vault, read-only, so every {{ op:// }} reference in .env.tpl must live in it. Read by the Makefile, for `make secret`; the VM only ever sees the token."
+  type        = string
+}
+
+variable "env_tpls" {
+  description = "The local templates, by their name on the host (env.tpl, env.<name>.tpl) to their path; empty for none. Their content goes into the first-boot script, read by the host after the image's /etc/orca-host/env*.tpl, so a variable set in both takes the local value. References, not values: the instance's metadata and the state may carry them. The Makefile sets it from ENV_TPL and the files next to it."
+  type        = map(string)
+  default     = {}
+  validation {
+    condition     = alltrue([for k in keys(var.env_tpls) : can(regex("^env(\\.[a-z0-9_]+)?\\.tpl$", k))])
+    error_message = "env_tpls keys are env.tpl or env.<name>.tpl, <name> in lowercase letters, digits and _."
+  }
+}
+
+variable "zone" {
+  description = "GCP zone of the VM: one of data_disk_zones. Changing it moves the VM, the data disk stays."
+  type        = string
+  default     = "europe-west9-b"
+  validation {
+    condition     = contains(var.data_disk_zones, var.zone)
+    error_message = "zone must be one of data_disk_zones: the VM attaches the data disk only there."
+  }
+}
+
+variable "data_disk_zones" {
+  description = "The two zones the data disk is replicated in, in the VM's region. Fixed for the disk's life: changing them replaces it."
+  type        = list(string)
+  default     = ["europe-west9-a", "europe-west9-b"]
+}
+
+variable "machine_type" {
+  description = "About 4 GB RAM per Compose stack: e2-standard-4 = 3 stacks and Orca. E2, N2 or N2D: the regional data disk attaches to no other series."
+  type        = string
+  default     = "e2-standard-4"
+}
+
+variable "data_disk_gb" {
+  description = "The data disk: /home/orca (checkouts, worktrees, ~/.claude), the Tailscale identity, Docker's data root (images, build cache, the volumes of project stacks). Grows live, never shrinks."
+  type        = number
+  default     = 50
+}
+
+variable "boot_disk_gb" {
+  description = "The boot disk: Debian and what the startup script installs, nothing else. Replaced with the VM."
+  type        = number
+  default     = 20
+}
+
+variable "ssh_public_key" {
+  description = "Your SSH public key, for `ssh core@<name>` over the tailnet."
+  type        = string
+}
+
+variable "orca_image" {
+  description = "The image this host runs, a full reference: the published base, or your own image built FROM it to add your tools. A tag moves; `sha-<sha>` or a digest pins."
+  type        = string
+  default     = "ghcr.io/qrafttech/orca-host:main"
+}

@@ -1,0 +1,56 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Orca, Claude Code and gh: Dockerfile build args under a `# renovate: datasource=… depName=…` comment naming their source",
+      "managerFilePatterns": ["/(^|/)Dockerfile$/"],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\nARG \\w+=(?<currentValue>\\S+)"
+      ]
+    },
+    {
+      "customType": "regex",
+      "description": "The op CLI the VM renders the env file with, before the image is pulled",
+      "managerFilePatterns": ["/^host/render-env$/"],
+      "matchStrings": ["1password/op:(?<currentValue>[0-9.]+) "],
+      "datasourceTemplate": "docker",
+      "depNameTemplate": "1password/op"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "Release tags are v-prefixed; Orca's mobile tags (mobile-android-v…) are not, and are left out",
+      "matchDatasources": ["github-releases"],
+      "extractVersion": "^v(?<version>\\d+\\.\\d+\\.\\d+)$"
+    },
+    {
+      "description": "The image's op and the VM's op move together",
+      "matchPackageNames": ["1password/op"],
+      "groupName": "1password op"
+    },
+    {
+      "description": "Every minor and patch release in one pull request",
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "non-major"
+    },
+    {
+      "description": "Every GitHub Actions release in one pull request",
+      "matchManagers": ["github-actions"],
+      "groupName": "GitHub Actions",
+      "separateMajorMinor": false
+    },
+    {
+      "description": "Orca alone: the mobile app refuses a host behind it, its bump must not wait on another",
+      "matchPackageNames": ["stablyai/orca"],
+      "groupName": "Orca"
+    },
+    {
+      "description": "A new Debian release renames packages the image installs: a pull request by hand",
+      "matchPackageNames": ["debian"],
+      "matchUpdateTypes": ["major"],
+      "enabled": false
+    }
+  ]
+}
