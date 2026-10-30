@@ -11,12 +11,12 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: hadolint/hadolint-action@v3.1.0
+      - uses: actions/checkout@v7
+      - uses: hadolint/hadolint-action@v3.5.0
         with:
           dockerfile: Dockerfile
       - run: shellcheck entrypoint.sh prune-stacks.sh inject-env.sh && shellcheck -s sh host/render-env host/up host/firewall
-      - uses: hashicorp/setup-terraform@v3
+      - uses: hashicorp/setup-terraform@v4
       - run: terraform fmt -check -diff -recursive terraform && terraform fmt -check -diff -recursive test
       - run: for d in terraform/gcp terraform/ovh; do terraform -chdir=$d init -backend=false && terraform -chdir=$d validate || exit 1; done
       # the first-boot script as a VM runs it, every branch of its template rendered
@@ -40,15 +40,15 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-qemu-action@v3
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - uses: actions/checkout@v7
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/metadata-action@v5
+      - uses: docker/metadata-action@v6
         id: meta
         with:
           images: ${{ env.IMAGE }}
@@ -56,7 +56,7 @@ jobs:
             type=ref,event=branch
             type=sha
       # amd64 first, loaded locally: the smoke test runs it before anything is pushed
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v7
         with:
           context: .
           load: true
@@ -86,7 +86,7 @@ jobs:
             fi
           done
           docker logs smoke; exit 1
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v7
         with:
           context: .
           platforms: linux/amd64,linux/arm64
