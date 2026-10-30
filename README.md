@@ -192,6 +192,25 @@ ACME_API_TOKEN={{ op://Acme Vault/api/credential }}
 
 If one of these files can't be read, the host won't start. Every session can see these tokens, so keep those vaults for technical tokens only, and read-only.
 
+## A second tailnet
+
+Your host is on one tailnet. If a project's machines are on another one, the host can join that one too, as a second node, and your sessions reach it through a proxy. In that tailnet's admin console, create a tag `orca-host` and an auth key with that tag, as in [Install](#install), step 1. Then add two lines to `.env.tpl` and run `make restart`:
+
+```sh
+COMPOSE_PROFILES=tailnet2
+TS2_AUTHKEY={{ op://AI Agents/tailscale-2/authkey }}
+```
+
+A tagged node is not a member of that tailnet: its access controls must let `tag:orca-host` reach the machines you need.
+
+Only the commands you point at the proxy, `socks5h://127.0.0.1:1055`, go through that tailnet; everything else goes out as usual. The machines' names work as they do on your laptop:
+
+```sh
+curl -x socks5h://127.0.0.1:1055 http://my-machine:8080
+ssh -o ProxyCommand='docker exec -i tailscale-2 tailscale nc %h %p' my-machine
+docker exec tailscale-2 tailscale status
+```
+
 ## Contribute
 
 Something missing, or broken? Changes are welcome.

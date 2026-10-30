@@ -31,6 +31,7 @@ A VM that runs `orca serve` headless, one host per person, all of that person's 
 | the 1Password vault the host reads: technical, the tokens agents use, no password data | 1Password, once | — |
 | a service account on that vault, read-only, and its token in an item of it | 1Password admin console, once | — |
 | Tailscale auth key | admin console, into a 1Password item `.env.tpl` references | Tailscale API, into that item |
+| a second tailnet, optional: its tag `orca-host`, an auth key with that tag, and access for the tag | that tailnet's admin console; the key into a 1Password item `TS2_AUTHKEY` references | Tailscale API, into that item |
 | Claude token, GitHub token, git identity | the tokens into 1Password items, `.env.tpl` references them; the identity in `.env.tpl` | — |
 | the tokens your MCP servers and your own tools read | 1Password items, referenced from `.env.tpl` | — |
 | another 1Password account: a service account on its vault, read-only, its token in an item of the host's vault | 1Password admin console, once per account; `.env.<name>.tpl` references its items | — |

@@ -50,6 +50,7 @@ What is personal goes in one of three places, never in this repository:
 `compose.yaml` lists every variable a host takes at the top, all read from one env file. The `orca-host` container also gets the whole file, so a new variable needs no change to compose.
 
 - `tailscale` uses `TS_AUTHKEY` once, on its first start, for a node tagged `orca-host` that never expires.
+- `tailscale-2`, only with `COMPOSE_PROFILES=tailnet2`, joins a second tailnet with `TS2_AUTHKEY`. A node belongs to one tailnet, and every tailnet uses `fd7a:115c:a1e0::/48`, so the second one cannot be an interface: it runs in userspace, with a SOCKS5 proxy on `127.0.0.1:1055` that a session points a tool at, never a global `ALL_PROXY` (GitHub and Anthropic would then depend on that tailnet). `--accept-routes` takes that tailnet's subnet routes, 4via6 included. `--port=0` leaves 41641 to the first node; the firewall does not open the random port, so the second node connects through replies and DERP, like any node behind a NAT.
 - `orca-host` mounts `/home/orca` from the data disk at the same path as on the VM, so a project's bind mounts point at the same files, and gets the VM's Docker socket, so project stacks run next to it.
 
 `compose.laptop.yaml` adapts the stack to Docker Desktop on a Mac, for development.
