@@ -1,0 +1,32 @@
+# Copy to .github/workflows/base-bump.yml in your image's repository. It needs your CI workflow to be named `image`,
+# to run on Dependabot's pull requests, and to accept `workflow_dispatch`.
+#
+# When `image` succeeds on Dependabot's bump of qrafttech/orca-host, this merges that pull request (the commit CI
+# checked, no other), then runs `image` on main: a merge made with this token triggers no push workflow. Without it
+# a bump waits for a hand, and Dependabot never refreshes a waiting one, since both digests are the tag `main`.
+# Nothing else Dependabot opens is merged.
+name: base bump
+
+on:
+  workflow_run:
+    workflows: [image]
+    types: [completed]
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+jobs:
+  merge:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.actor.login == 'dependabot[bot]' &&
+      startsWith(github.event.workflow_run.head_branch, 'dependabot/docker/qrafttech/orca-host-')
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - run: gh pr merge "${{ github.event.workflow_run.head_branch }}" --merge --match-head-commit "${{ github.event.workflow_run.head_sha }}"
+      - run: gh workflow run image.yml --ref main
