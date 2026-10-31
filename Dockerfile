@@ -7,7 +7,7 @@
 # renovate: datasource=github-releases depName=stablyai/orca
 ARG ORCA_VERSION=1.4.245
 # renovate: datasource=npm depName=@anthropic-ai/claude-code
-ARG CLAUDE_CODE_VERSION=2.1.314
+ARG CLAUDE_CODE_VERSION=2.1.316
 # renovate: datasource=github-releases depName=cli/cli
 ARG GH_VERSION=2.103.3
 ARG DOCKER_VERSION=29.8.1
