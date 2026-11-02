@@ -194,10 +194,9 @@ If one of these files can't be read, the host won't start. Every session can see
 
 ## A second tailnet
 
-Your host is on one tailnet. If a project's machines are on another one, the host can join that one too, as a second node, and your sessions reach it through a proxy. In that tailnet's admin console, create a tag, named as that tailnet's people will read it, and an auth key with that tag, as in [Install](#install), step 1. Then add these lines to `.env.tpl` and run `make restart`:
+Your host is on one tailnet. If a project's machines are on another one, the host can join that one too, as a second node, and your sessions reach it through a proxy. In that tailnet's admin console, create a tag, named as that tailnet's people will read it, and an auth key with that tag, as in [Install](#install), step 1. Then add its key to `.env.tpl` and run `make restart`:
 
 ```sh
-COMPOSE_PROFILES=tailnet2
 TS2_AUTHKEY={{ op://AI Agents/tailscale-2/authkey }}
 # optional: the host's name on that tailnet, else the same as on yours
 TS2_HOSTNAME=my-agents
