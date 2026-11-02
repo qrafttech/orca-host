@@ -9,4 +9,7 @@ docker pull -q "$ORCA_IMAGE" >/dev/null
 [ "$(docker image inspect -f '{{.Id}}' "$ORCA_IMAGE")" = "$(cat /var/lib/orca/env.image 2>/dev/null)" ] \
   || /opt/orca/render-env
 cd /opt/orca
+# the second tailnet runs when its key is set: compose cannot start a service on a variable alone
+COMPOSE_PROFILES=$(sed -n 's/^TS2_AUTHKEY=//p' /var/lib/orca/env | tail -n 1 | sed 's/..*/tailnet2/')
+export COMPOSE_PROFILES
 exec docker compose --env-file /var/lib/orca/env up -d --pull missing --remove-orphans

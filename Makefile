@@ -68,14 +68,17 @@ $(TFVARS):
 	@echo "$@ is missing: fill in $(TF_DIR)/terraform.tfvars.example there, or point TFVARS at yours"; exit 1
 
 ## image and stack, on this laptop
+# the second tailnet runs when env sets its key, as on the host (host/up)
+TAILNET2 = $$(sed -n 's/^TS2_AUTHKEY=//p' env 2>/dev/null | tail -n 1 | sed 's/..*/tailnet2/')
+
 build:              ## build the image for this machine's architecture, as orca-host:dev
 	docker build -t orca-host:dev .
 
 up: env             ## run the stack here, advertised on this laptop's tailnet IP
-	PAIRING_ADDRESS=$$(tailscale ip -4) ORCA_IMAGE=$(ORCA_IMAGE) ORCA_ENV_FILE=env docker compose -f compose.yaml -f compose.laptop.yaml --env-file env up -d
+	COMPOSE_PROFILES=$(TAILNET2) PAIRING_ADDRESS=$$(tailscale ip -4) ORCA_IMAGE=$(ORCA_IMAGE) ORCA_ENV_FILE=env docker compose -f compose.yaml -f compose.laptop.yaml --env-file env up -d
 
 down:
-	docker compose -f compose.yaml -f compose.laptop.yaml --env-file env down
+	COMPOSE_PROFILES=$(TAILNET2) docker compose -f compose.yaml -f compose.laptop.yaml --env-file env down
 
 ## host, on GCP or OVH
 secret bootstrap init plan apply rebuild lockdown destroy pair-desktop pair-mobile restart logs shell ssh: $(TFVARS)
