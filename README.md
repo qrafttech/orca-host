@@ -194,14 +194,16 @@ If one of these files can't be read, the host won't start. Every session can see
 
 ## A second tailnet
 
-Your host is on one tailnet. If a project's machines are on another one, the host can join that one too, as a second node, and your sessions reach it through a proxy. In that tailnet's admin console, create a tag `orca-host` and an auth key with that tag, as in [Install](#install), step 1. Then add two lines to `.env.tpl` and run `make restart`:
+Your host is on one tailnet. If a project's machines are on another one, the host can join that one too, as a second node, and your sessions reach it through a proxy. In that tailnet's admin console, create a tag, named as that tailnet's people will read it, and an auth key with that tag, as in [Install](#install), step 1. Then add these lines to `.env.tpl` and run `make restart`:
 
 ```sh
 COMPOSE_PROFILES=tailnet2
 TS2_AUTHKEY={{ op://AI Agents/tailscale-2/authkey }}
+# optional: the host's name on that tailnet, else the same as on yours
+TS2_HOSTNAME=my-agents
 ```
 
-A tagged node is not a member of that tailnet: its access controls must let `tag:orca-host` reach the machines you need.
+A tagged node is not a member of that tailnet: its access controls must let that tag reach the machines you need, and nothing more.
 
 Only the commands you point at the proxy, `socks5h://127.0.0.1:1055`, go through that tailnet; everything else goes out as usual. The machines' names work as they do on your laptop:
 
