@@ -41,7 +41,7 @@ CI, on every push: lint, build, a smoke test (the server comes up, Docker works 
 
 What is personal goes in one of three places, never in this repository:
 
-- **software** (binaries, MCP servers): the person's own image, `FROM` this one, named in `orca_image`. An image is reproducible, says what is in it, and handles any release format with `RUN`; installing at boot would give none of that. The image must be public: the host does no registry login.
+- **software** (binaries, MCP servers): the person's own image, `FROM` this one, named in `orca_image`. An image is reproducible, says what is in it, and handles any release format with `RUN`; installing at boot would give none of that. The image must be public: the host does no registry login. To follow the base, Dependabot opens a pull request per base build and `docs/your-image/base-bump.yml` merges it once the image's CI passes; left to a hand, a bump goes stale, since Dependabot never refreshes a waiting one (both digests are the tag `main`).
 - **text** (permissions, `CLAUDE.md`, skills, `config/mcp.json`): the settings repository, pulled at every start.
 - **configuration**: `.env.tpl`, with secrets as references to 1Password items.
 

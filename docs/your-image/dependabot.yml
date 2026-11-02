@@ -1,0 +1,7 @@
+# Copy to .github/dependabot.yml in your image's repository: a pull request each time the base's `main` moves,
+# which base-bump.yml merges once your CI has built and checked the image on it.
+version: 2
+updates:
+  - package-ecosystem: docker
+    directory: /
+    schedule: { interval: daily }
