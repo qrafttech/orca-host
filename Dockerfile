@@ -1,5 +1,6 @@
 # syntax=docker/dockerfile:1
-# orca-host — `orca serve` headless, with the tools an Orca worktree needs: claude, gh, git, docker CLI + compose + buildx, op.
+# orca-host — `orca serve` headless, with the tools an Orca worktree needs: claude, gh, git, docker CLI + compose + buildx, op,
+# lightpanda.
 # Built for amd64 and arm64. State is not in the image: /home/orca is a volume, see compose.yaml.
 # No /etc/orca-host/env*.tpl here: a derived image COPYs its own, the host reads them at boot (README).
 
@@ -14,6 +15,7 @@ ARG DOCKER_VERSION=29.8.1
 # Also pinned in host/render-env, which renders the env file with the same CLI before this
 # image is pulled. Two independent pins: the VM's copy must work even when this image does not.
 ARG OP_VERSION=2.42.0
+ARG LIGHTPANDA_VERSION=1.0.4
 
 # --- Orca: the official AppImage, extracted once (no FUSE in a container) ---------------------------------
 # An AppImage is an ELF runtime with a squashfs appended: unsquashfs at the runtime's size extracts it without
@@ -59,6 +61,15 @@ FROM docker:${DOCKER_VERSION}-cli AS docker-cli
 # --- op: the 1Password CLI, the static binary from the official image -----------------------------------------
 FROM 1password/op:${OP_VERSION} AS op
 
+# --- lightpanda: a headless browser for agents (CDP server, `lightpanda mcp`), from its official image -----------
+# amd64 only: the arm64 build needs glibc 2.38 and Debian 12 has 2.36. On arm64 the stage is an empty directory.
+FROM lightpanda/browser:${LIGHTPANDA_VERSION} AS lightpanda-upstream
+FROM debian:12-slim AS lightpanda
+ARG TARGETARCH
+COPY --from=lightpanda-upstream /bin/lightpanda /tmp/lightpanda
+RUN mkdir -p /opt/lightpanda && if [ "$TARGETARCH" = amd64 ]; then install -m 755 /tmp/lightpanda /opt/lightpanda/lightpanda; fi \
+ && rm /tmp/lightpanda
+
 # --- the image -------------------------------------------------------------------------------------------------
 FROM debian:12-slim
 ARG CLAUDE_CODE_VERSION
@@ -82,14 +93,16 @@ COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
 COPY --from=docker-cli /usr/local/libexec/docker/cli-plugins/docker-compose /usr/local/libexec/docker/cli-plugins/docker-compose
 COPY --from=docker-cli /usr/local/libexec/docker/cli-plugins/docker-buildx /usr/local/libexec/docker/cli-plugins/docker-buildx
 COPY --from=op /usr/local/bin/op /usr/local/bin/op
+COPY --from=lightpanda /opt/lightpanda/ /usr/local/bin/
 
 RUN useradd --create-home --shell /bin/bash orca \
  && ln -s "/opt/claude/${CLAUDE_CODE_VERSION}/claude" /usr/local/bin/claude \
  && printf '#!/bin/sh\nexec /opt/orca/AppRun "$@"\n' > /usr/local/bin/orca && chmod 755 /usr/local/bin/orca
 
 # Claude Code never updates itself here (the image is the version). git authenticates to GitHub through gh,
-# so GH_TOKEN alone is the GitHub credential: no ssh key, no `gh auth login`.
+# so GH_TOKEN alone is the GitHub credential: no ssh key, no `gh auth login`. Lightpanda sends no usage telemetry.
 ENV DISABLE_AUTOUPDATER=1 \
+    LIGHTPANDA_DISABLE_TELEMETRY=true \
     LIBGL_ALWAYS_SOFTWARE=1 \
     GIT_CONFIG_COUNT=1 \
     GIT_CONFIG_KEY_0=credential.https://github.com.helper \

@@ -79,7 +79,7 @@ If the VM's zone runs out of machines, set `zone` to the other value of `data_di
 
 ## Your own tools
 
-The host runs an image with Claude, `gh`, `git`, Docker, Node, Python and Ruby. For anything else, you build your own image on top of it. Nothing gets installed on the host by hand, so a rebuilt host comes back exactly the same.
+The host runs an image with Claude, `gh`, `git`, Docker, Node, Python, Ruby and [Lightpanda](https://github.com/lightpanda-io/browser), a headless browser for agents (amd64 only). For anything else, you build your own image on top of it. Nothing gets installed on the host by hand, so a rebuilt host comes back exactly the same.
 
 Say you want Claude to read Notion and Slack. It takes three things:
 
@@ -117,12 +117,13 @@ Say you want Claude to read Notion and Slack. It takes three things:
    {
      "mcpServers": {
        "notion": { "command": "notion-mcp-server", "env": { "NOTION_TOKEN": "${NOTION_TOKEN}" } },
-       "slack": { "command": "slack-mcp-server", "args": ["-t", "stdio"], "env": { "SLACK_MCP_XOXP_TOKEN": "${SLACK_TOKEN}" } }
+       "slack": { "command": "slack-mcp-server", "args": ["-t", "stdio"], "env": { "SLACK_MCP_XOXP_TOKEN": "${SLACK_TOKEN}" } },
+       "lightpanda": { "command": "lightpanda", "args": ["mcp"] }
      }
    }
    ```
 
-   Push, then `make restart`.
+   Lightpanda is already in the base image: its line needs no server in yours. Push, then `make restart`.
 
 To follow this base image without thinking about it, copy the two files of [`docs/your-image/`](docs/your-image/) into your image's repository: Dependabot opens a pull request each time the base moves, and `base-bump.yml` merges it once your CI has built and checked the image, then rebuilds `main`. Your host picks it up within five minutes.
 

@@ -63,6 +63,10 @@ jobs:
           tags: ${{ env.IMAGE }}:smoke
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - name: smoke test — lightpanda runs on the image's glibc and reaches a page over TLS
+        run: |
+          docker run --rm --entrypoint lightpanda ${{ env.IMAGE }}:smoke fetch --dump html --log-level fatal https://github.com \
+            | grep -q '</html>'
       - name: smoke test — the ready contract, as upstream tests it, and a deleted worktree's stack torn down
         run: |
           # a compose stack started from a directory under /home/orca that no longer exists, one of its images built by
