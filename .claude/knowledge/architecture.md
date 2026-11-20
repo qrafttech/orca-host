@@ -29,7 +29,6 @@ laptop / phone ──tailnet──▶ VM (Debian)
 | `gh`, `git` | `git` authenticates through `gh`, so `GH_TOKEN` is the only GitHub credential |
 | Docker CLI, compose, buildx | a project's stack runs on the VM's Docker; buildx so compose labels the images it builds, which the worktree sweep relies on |
 | `op` | the host's secrets are 1Password items |
-| `lightpanda` | a headless browser for agents: reads a page as markdown, serves CDP and MCP (`lightpanda mcp`), in a fraction of Chromium's time and memory. No visual rendering, so a person's image still brings Chromium for screenshots and Orca's browser. amd64 only: its arm64 build needs a newer glibc than Debian 12's |
 | `ruby`, `python3`, `node` | a project's Claude Code hooks run next to `claude`, not in the project's containers |
 
 Versions are build args at the top of the `Dockerfile`, bumped by Renovate in three pull requests: Orca alone, other minor and patch releases, GitHub Actions. A new Debian major is done by hand, since it renames packages.
